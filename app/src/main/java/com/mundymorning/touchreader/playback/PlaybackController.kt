@@ -12,9 +12,14 @@ import com.mundymorning.touchreader.core.reader.ReaderBook
 import com.mundymorning.touchreader.core.tts.NarrationSession
 import com.mundymorning.touchreader.core.tts.NarrationState
 import com.mundymorning.touchreader.data.AppDatabase
+import com.mundymorning.touchreader.data.BookmarkEntity
+import com.mundymorning.touchreader.data.DocumentEntity
 import com.mundymorning.touchreader.data.DocumentStore
 import com.mundymorning.touchreader.data.Settings
 import com.mundymorning.touchreader.tts.AndroidTtsEngine
+import com.mundymorning.touchreader.tts.EngineStatus
+import com.mundymorning.touchreader.tts.TtsEngineInfo
+import com.mundymorning.touchreader.tts.VoiceInfo
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -30,9 +35,11 @@ data class PlayerUi(
     val voiceName: String? = null,
     val error: String? = null,
     val sleepEndsAt: Long? = null,
+    val sleepEndOfChapter: Boolean = false,
 ) {
     val playing get() = state == NarrationState.PLAYING
     val chapterTitle get() = book?.chapters?.getOrNull(position.chapter)?.title.orEmpty()
+    val sleepActive get() = sleepEndsAt != null || sleepEndOfChapter
 }
 
 /**
@@ -46,10 +53,41 @@ class PlaybackController(
     private val settings: Settings,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val engine: AndroidTtsEngine by lazy { AndroidTtsEngine(app) }
 
-    val voices get() = engine.voices
-    val engineStatus get() = engine.status
+    // Created lazily on the main thread so app start-up does not wait for the speech service.
+    private val engineFlow = MutableStateFlow<AndroidTtsEngine?>(null)
+    private var statusJob: Job? = null
+
+    private fun engine(): AndroidTtsEngine = engineFlow.value ?: AndroidTtsEngine(app, settings.ttsEngine.value).also { e ->
+        engineFlow.value = e
+        watchStatus(e)
+    }
+
+    /** Never freeze or crash on a speech engine that will not start: fall back to the system default once. */
+    private fun watchStatus(e: AndroidTtsEngine) {
+        statusJob?.cancel()
+        statusJob = scope.launch {
+            val failed = e.status.first { it is EngineStatus.Failed || it is EngineStatus.Ready }
+            if (failed is EngineStatus.Failed && settings.ttsEngine.value != null) {
+                _ui.update { it.copy(error = "The selected speech engine could not start. Using the system default instead.") }
+                switchEngine(null)
+            }
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val voices: Flow<List<VoiceInfo>>
+        get() { engine(); return engineFlow.filterNotNull().flatMapLatest { it.voices } }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val engineStatus: Flow<EngineStatus>
+        get() { engine(); return engineFlow.filterNotNull().flatMapLatest { it.status } }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val engines: Flow<List<TtsEngineInfo>>
+        get() { engine(); return engineFlow.filterNotNull().flatMapLatest { it.engines } }
+
+    val defaultEnginePackage: String? get() = engineFlow.value?.defaultEnginePackage
 
     private val _ui = MutableStateFlow(PlayerUi())
     val ui: StateFlow<PlayerUi> = _ui.asStateFlow()
@@ -82,7 +120,7 @@ class PlaybackController(
         if (_ui.value.docId == docId && _ui.value.book != null) return
         closeCurrent()
         _ui.value = PlayerUi(docId = docId, loading = true)
-        val loaded = withContext<Pair<Pair<com.mundymorning.touchreader.data.DocumentEntity, ReaderBook>?, String?>>(Dispatchers.IO) {
+        val loaded = withContext<Pair<Pair<DocumentEntity, ReaderBook>?, String?>>(Dispatchers.IO) {
             try {
                 val entity = db.documents().get(docId) ?: return@withContext null to "This document is no longer in your library."
                 val book = ReaderBook.from(store.load(docId))
@@ -99,20 +137,26 @@ class PlaybackController(
         val (entity, book) = pair
         val voice = entity.voiceName ?: settings.defaultVoice.value
         val start = book.clamp(Position(entity.chapter, entity.sentence))
-        engine.setSpeed(entity.speed)
-        engine.setVoice(voice)
-        val s = NarrationSession(book, engine, start)
-        session = s
+        val e = engine()
+        e.setSpeed(entity.speed)
+        e.setVoice(voice)
         _ui.value = PlayerUi(docId, entity.title, book, false, null, start, NarrationState.IDLE, entity.speed, voice)
+        attachSession(book, start)
+        withContext(Dispatchers.IO) { db.documents().touch(docId, System.currentTimeMillis()) }
+    }
+
+    private fun attachSession(book: ReaderBook, start: Position) {
+        val s = NarrationSession(book, engine(), start)
+        session = s
+        collectJob?.cancel()
         collectJob = scope.launch {
             combine(s.position, s.state, s.error) { p, st, e -> Triple(p, st, e) }.collect { (p, st, e) ->
                 val wasPlaying = _ui.value.playing
-                _ui.update { it.copy(position = p, state = st, error = e) }
+                _ui.update { it.copy(position = p, state = st, error = e ?: it.error, sleepEndOfChapter = s.pauseAtChapterEnd) }
                 persist(immediate = wasPlaying && st != NarrationState.PLAYING || st == NarrationState.FINISHED)
                 if (st != NarrationState.PLAYING) abandonFocusIfIdle(st)
             }
         }
-        withContext(Dispatchers.IO) { db.documents().touch(docId, System.currentTimeMillis()) }
     }
 
     private fun abandonFocusIfIdle(st: NarrationState) {
@@ -137,7 +181,8 @@ class PlaybackController(
 
     fun play() {
         val s = session ?: return
-        engine.setVoice(_ui.value.voiceName)
+        _ui.update { it.copy(error = null) }
+        engine().setVoice(_ui.value.voiceName)
         val granted = AudioManagerCompat.requestAudioFocus(audioManager, focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         if (!granted) {
             _ui.update { it.copy(error = "Another app is using the audio. Try again in a moment.") }
@@ -151,6 +196,7 @@ class PlaybackController(
     fun toggle() { if (_ui.value.playing) pause() else play() }
 
     fun seekTo(p: Position) { session?.seekTo(p); persist(immediate = false) }
+    fun seekToFraction(f: Float) { _ui.value.book?.let { seekTo(it.positionAt(f)) } }
     fun playFrom(p: Position) { seekTo(p); play() }
     fun nextSentence() { session?.nextSentence() }
     fun previousSentence() { session?.previousSentence() }
@@ -159,7 +205,7 @@ class PlaybackController(
 
     fun setSpeed(speed: Float) {
         val id = _ui.value.docId ?: return
-        engine.setSpeed(speed)
+        engine().setSpeed(speed)
         _ui.update { it.copy(speed = speed) }
         session?.restartCurrent()
         scope.launch(Dispatchers.IO) { db.documents().setSpeed(id, speed) }
@@ -168,22 +214,44 @@ class PlaybackController(
     /** Choose a narrator for this document; null = system default. */
     fun setVoice(name: String?) {
         val id = _ui.value.docId ?: return
-        engine.setVoice(name)
+        engine().setVoice(name)
         _ui.update { it.copy(voiceName = name) }
         session?.restartCurrent()
         scope.launch(Dispatchers.IO) { db.documents().setVoice(id, name) }
     }
 
-    fun previewVoice(name: String, sample: String) {
-        pause()
-        engine.preview(name, sample)
+    /** Switch to another installed Android speech engine (null = system default), keeping place and play state. */
+    fun switchEngine(pkg: String?) {
+        settings.setTtsEngine(pkg)
+        val ui = _ui.value
+        val wasPlaying = ui.playing
+        collectJob?.cancel()
+        session?.stop(); session?.release(); session = null
+        engineFlow.value?.release()
+        engineFlow.value = null
+        val e = engine()
+        e.setSpeed(ui.speed)
+        // Voice names belong to one engine, so a switch resets the narrator to that engine's default.
+        e.setVoice(null)
+        ui.docId?.let { id -> scope.launch(Dispatchers.IO) { db.documents().setVoice(id, null) } }
+        _ui.update { it.copy(voiceName = null, state = NarrationState.IDLE) }
+        ui.book?.let { attachSession(it, ui.position) }
+        if (wasPlaying) play()
     }
 
-    fun stopPreview() { engine.stop() }
+    fun previewVoice(name: String, sample: String) {
+        pause()
+        engine().preview(name, sample)
+    }
 
-    fun setSleepTimer(minutes: Int?) {
+    fun stopPreview() { engineFlow.value?.stop() }
+
+    /** Pause after [minutes], or at the end of the current chapter. Pass nothing to turn the timer off. */
+    fun setSleepTimer(minutes: Int? = null, endOfChapter: Boolean = false) {
         sleepJob?.cancel()
-        if (minutes == null) { _ui.update { it.copy(sleepEndsAt = null) }; return }
+        session?.pauseAtChapterEnd = endOfChapter
+        _ui.update { it.copy(sleepEndsAt = null, sleepEndOfChapter = endOfChapter) }
+        if (minutes == null) return
         val ends = System.currentTimeMillis() + minutes * 60_000L
         _ui.update { it.copy(sleepEndsAt = ends) }
         sleepJob = scope.launch {
@@ -198,7 +266,7 @@ class PlaybackController(
         val id = ui.docId ?: return
         withContext(Dispatchers.IO) {
             db.bookmarks().insert(
-                com.mundymorning.touchreader.data.BookmarkEntity(
+                BookmarkEntity(
                     docId = id, chapter = ui.position.chapter, sentence = ui.position.sentence,
                     label = label, createdAt = System.currentTimeMillis(),
                 )

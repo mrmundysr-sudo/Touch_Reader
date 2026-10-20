@@ -22,6 +22,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -128,6 +130,12 @@ fun ReaderScreen(container: AppContainer, docId: Long, autoPlay: Boolean, onBack
             items(options.size) { i ->
                 ListItem(headlineContent = { Text(options[i].first) }, modifier = Modifier.clickable { controller.setSleepTimer(options[i].second); sheet = Sheet.NONE })
             }
+            item {
+                ListItem(
+                    headlineContent = { Text("End of this chapter") },
+                    modifier = Modifier.clickable { controller.setSleepTimer(endOfChapter = true); sheet = Sheet.NONE },
+                )
+            }
         }
         Sheet.TEXT -> ModalBottomSheet({ sheet = Sheet.NONE }) {
             Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
@@ -211,7 +219,13 @@ private fun PlayerPanel(ui: com.mundymorning.touchreader.playback.PlayerUi, book
     Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
             Text(ui.chapterTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.padding(horizontal = 4.dp))
-            LinearProgressIndicator(progress = { book.progress(ui.position) }, Modifier.fillMaxWidth().padding(vertical = 6.dp).height(4.dp))
+            var drag by remember { mutableStateOf<Float?>(null) }
+            Slider(
+                value = drag ?: book.progress(ui.position),
+                onValueChange = { drag = it },
+                onValueChangeFinished = { drag?.let { controller.seekToFraction(it) }; drag = null },
+                modifier = Modifier.fillMaxWidth().height(28.dp).semantics { contentDescription = "Reading position" },
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(controller::previousChapter, Modifier.size(48.dp)) { Icon(Icons.Rounded.SkipPrevious, "Previous chapter") }
                 IconButton(controller::previousSentence, Modifier.size(48.dp)) { Icon(Icons.Rounded.NavigateBefore, "Previous sentence") }
@@ -226,7 +240,7 @@ private fun PlayerPanel(ui: com.mundymorning.touchreader.playback.PlayerUi, book
                 AssistChip({ onSheet(Sheet.VOICE) }, { Text("Voice") }, leadingIcon = { Icon(Icons.Rounded.RecordVoiceOver, null, Modifier.size(18.dp)) })
                 AssistChip(
                     { onSheet(Sheet.SLEEP) },
-                    { Text(ui.sleepEndsAt?.let { "On" } ?: "Sleep") },
+                    { Text(if (ui.sleepActive) "On" else "Sleep") },
                     leadingIcon = { Icon(Icons.Rounded.Timer, null, Modifier.size(18.dp)) },
                 )
             }

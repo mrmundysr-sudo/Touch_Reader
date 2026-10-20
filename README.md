@@ -15,6 +15,8 @@ Engine research and licensing notes: [docs/RESEARCH.md](docs/RESEARCH.md).
 | `core/document` | pure Kotlin/JVM | Parsers (TXT, Markdown, HTML, EPUB, DOCX), text cleanup, registry |
 | `core/reader` | pure Kotlin/JVM | Sentence segmentation, chapters, reading positions, navigation |
 | `core/tts` | pure Kotlin/JVM | `SpeechEngine` interface + `NarrationSession` (look-ahead queue, pause/seek) |
+| `core/audio` | pure Kotlin/JVM | Bounded synthesize-ahead/play pipeline for PCM engines, RTF monitoring |
+| `core/voicepacks` | pure Kotlin/JVM | Voice-pack catalog, resumable verified download, safe install |
 | `app` | Android | Room storage, PDF parser (PDFBox-Android), Android TTS engine, media service, Compose UI |
 
 Pure-Kotlin modules can be built and tested without the Android SDK:

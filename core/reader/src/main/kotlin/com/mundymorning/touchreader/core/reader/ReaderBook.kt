@@ -80,6 +80,14 @@ class ReaderBook(val title: String, val author: String?, val chapters: List<Read
         return ((offsets[p.chapter] + p.sentence).toFloat() / totalSentences).coerceIn(0f, 1f)
     }
 
+    /** Inverse of [progress]: the position at [fraction] (0..1) of the whole text. */
+    fun positionAt(fraction: Float): Position {
+        if (totalSentences == 0) return Position.START
+        val target = (fraction.coerceIn(0f, 1f) * totalSentences).toInt().coerceAtMost(totalSentences - 1)
+        val ch = offsets.indexOfLast { it <= target }.coerceAtLeast(0)
+        return Position(ch, (target - offsets[ch]).coerceIn(0, chapters[ch].sentences.size - 1))
+    }
+
     companion object {
         fun from(doc: ParsedDocument, locale: Locale = Locale.ENGLISH): ReaderBook {
             val chapters = doc.chapters.map { ch ->

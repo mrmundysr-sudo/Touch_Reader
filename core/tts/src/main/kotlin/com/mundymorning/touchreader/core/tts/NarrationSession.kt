@@ -35,6 +35,9 @@ class NarrationSession(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    /** When true, narration pauses after the last sentence of the chapter now being read (sleep timer). */
+    @Volatile var pauseAtChapterEnd: Boolean = false
+
     init { engine.listener = this }
 
     fun play() = synchronized(lock) {
@@ -119,6 +122,13 @@ class NarrationSession(
     override fun onDone(id: Int) = synchronized(lock) {
         val p = inflight.remove(id) ?: return@synchronized
         if (_state.value != NarrationState.PLAYING) return@synchronized
+        if (pauseAtChapterEnd && book.next(p)?.chapter != p.chapter) {
+            pauseAtChapterEnd = false
+            clearQueue()
+            _position.value = book.next(p) ?: p
+            _state.value = NarrationState.PAUSED
+            return@synchronized
+        }
         if (inflight.isEmpty() && book.next(p) == null) {
             _state.value = NarrationState.FINISHED
             lastQueued = null

@@ -21,6 +21,8 @@ data class VoiceInfo(
     val installed: Boolean,
 )
 
+data class TtsEngineInfo(val packageName: String, val label: String)
+
 sealed interface EngineStatus {
     data object Initializing : EngineStatus
     data object Ready : EngineStatus
@@ -28,7 +30,7 @@ sealed interface EngineStatus {
 }
 
 /** Baseline/fallback engine using whatever speech service is installed on the phone. */
-class AndroidTtsEngine(context: Context) : SpeechEngine {
+class AndroidTtsEngine(context: Context, enginePackage: String? = null) : SpeechEngine {
     override var listener: SpeechEngine.Listener? = null
 
     private val _status = MutableStateFlow<EngineStatus>(EngineStatus.Initializing)
@@ -36,6 +38,13 @@ class AndroidTtsEngine(context: Context) : SpeechEngine {
 
     private val _voices = MutableStateFlow<List<VoiceInfo>>(emptyList())
     val voices: StateFlow<List<VoiceInfo>> = _voices.asStateFlow()
+
+    private val _engines = MutableStateFlow<List<TtsEngineInfo>>(emptyList())
+    /** Speech engines installed on the phone (available once initialized). */
+    val engines: StateFlow<List<TtsEngineInfo>> = _engines.asStateFlow()
+
+    @Volatile var defaultEnginePackage: String? = null
+        private set
 
     private val lock = Any()
     private val pending = ArrayList<Pair<Int, String>>()
@@ -45,7 +54,9 @@ class AndroidTtsEngine(context: Context) : SpeechEngine {
     private var voiceName: String? = null
 
     init {
-        tts = TextToSpeech(context.applicationContext) { code -> onInit(code) }
+        val callback = TextToSpeech.OnInitListener { code -> onInit(code) }
+        tts = if (enginePackage != null) TextToSpeech(context.applicationContext, callback, enginePackage)
+        else TextToSpeech(context.applicationContext, callback)
     }
 
     private fun onInit(code: Int) {
@@ -70,6 +81,10 @@ class AndroidTtsEngine(context: Context) : SpeechEngine {
             }
         })
         refreshVoices(engine)
+        try {
+            _engines.value = engine.engines.map { TtsEngineInfo(it.name, it.label) }.sortedBy { it.label }
+            defaultEnginePackage = engine.defaultEngine
+        } catch (e: Exception) { /* engine list is optional */ }
         synchronized(lock) {
             ready = true
             engine.setSpeechRate(speed)

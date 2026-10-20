@@ -24,6 +24,11 @@ class Settings(context: Context) {
     val defaultVoice: StateFlow<String?> = _defaultVoice.asStateFlow()
     fun setDefaultVoice(name: String?) { _defaultVoice.value = name; prefs.edit().putString("defaultVoice", name).apply() }
 
+    private val _ttsEngine = MutableStateFlow(prefs.getString("ttsEngine", null))
+    /** Package name of the chosen Android speech engine, or null for the system default. */
+    val ttsEngine: StateFlow<String?> = _ttsEngine.asStateFlow()
+    fun setTtsEngine(pkg: String?) { _ttsEngine.value = pkg; prefs.edit().putString("ttsEngine", pkg).apply() }
+
     private val _defaultSpeed = MutableStateFlow(prefs.getFloat("defaultSpeed", 1f))
     val defaultSpeed: StateFlow<Float> = _defaultSpeed.asStateFlow()
     fun setDefaultSpeed(v: Float) { _defaultSpeed.value = v; prefs.edit().putFloat("defaultSpeed", v).apply() }

@@ -36,8 +36,30 @@ No paid/cloud fallback will be introduced without explicit approval.
 Plan: Phase 2 evaluates Kokoro via sherpa-onnx first (permissive weights), measures it on a budget phone,
 and treats Piper as optional pending a license review. Android `TextToSpeech` remains the default/fallback.
 
+## Phase 2 findings: can Kokoro / Piper ship in this app?
+
+Source: a third-party engineering issue ("Spike: benchmark sherpa-onnx TTS models on real devices + license review",
+muxable/rtchat#1500). **Secondary source; not verified against sherpa-onnx's own LICENSE files, and this sandbox cannot
+reach GitHub release pages or Hugging Face to check.** Re-verify before relying on any of it.
+
+1. **Copyleft blocker (needs a product decision).** It states the prebuilt sherpa-onnx Android library statically
+   links **espeak-ng, which is GPL-3.0**, and that Kokoro (multi-lang, v0.19) and Piper packs need espeak-ng data in sherpa-onnx.
+   Shipping that library would likely require Touch Reader to be distributed under GPL-3.0-compatible terms (source available).
+   Alternatives: build sherpa-onnx without espeak (not possible for Piper/Kokoro-v0.19 per that source), or use an engine that
+   does not need it (Supertonic 3: OpenRAIL-M weights with use restrictions that need their own review; ~129 MB).
+2. **Speed.** Measured only on an x86_64 *emulator* (close to desktop speed), real-time factor (synthesis time / audio time; must be < 1):
+   Kokoro multi-lang v1.1 fp32 0.59, **int8 1.52**; Kokoro en v0.19 int8 1.58; Piper libritts_r int8 0.21; Piper ru irina int8 0.23.
+   Phones are slower than that, so **Kokoro is unlikely to keep up on inexpensive phones**; Piper int8 plausibly can.
+3. **Sizes (download / on disk):** Kokoro multi-lang v1.1 int8 147 / 215 MB; Kokoro en v0.19 int8 103 / 158 MB; Piper medium int8 ~21–23 / 37–40 MB.
+4. **Piper voice licenses vary per voice** (libritts_r: CC BY 4.0 dataset; some voices unknown or non-commercial). Each voice must be cleared individually.
+
+Consequence for this build: no neural engine is integrated. What *is* built and tested is the engine-independent plumbing
+(bounded synthesis/playback pipeline with real-time-factor monitoring, resumable verified voice-pack downloads) plus the ability to
+use any other speech engine installed on the phone through Android's TextToSpeech.
+
 ## Sources
 - Chatterbox repo: https://github.com/resemble-ai/chatterbox
 - Chatterbox ONNX exports: https://huggingface.co/onnx-community/chatterbox-ONNX , https://huggingface.co/ResembleAI/chatterbox-turbo-ONNX
 - OpenVoice V2 model card: https://huggingface.co/myshell-ai/OpenVoiceV2
 - On-device TTS benchmark: https://picovoice.ai/blog/on-device-tts/
+- sherpa-onnx license/RTF spike (secondary): https://github.com/muxable/rtchat/issues/1500

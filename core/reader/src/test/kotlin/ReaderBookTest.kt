@@ -55,4 +55,12 @@ class ReaderBookTest {
         val c = book().chapters[0]
         assertEquals(2, c.sentenceAt(1, c.blocks[1].text.indexOf("Second") + 3))
     }
+
+    @Test fun positionAtInvertsProgress() {
+        val b = book()
+        assertEquals(Position.START, b.positionAt(0f))
+        assertEquals(Position(1, 0), b.positionAt(b.progress(Position(1, 0))))
+        assertEquals(Position(0, 2), b.positionAt(b.progress(Position(0, 2))))
+        assertEquals(Position(1, 0), b.positionAt(1f)) // clamps to last sentence
+    }
 }

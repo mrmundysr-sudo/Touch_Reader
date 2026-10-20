@@ -7,6 +7,7 @@ import com.mundymorning.touchreader.data.DocumentStore
 import com.mundymorning.touchreader.data.Settings
 import com.mundymorning.touchreader.importer.ImportManager
 import com.mundymorning.touchreader.playback.PlaybackController
+import com.mundymorning.touchreader.voices.VoicePackManager
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
 /** Hand-rolled service locator; small enough that a DI framework would only add build risk. */
@@ -16,6 +17,7 @@ class AppContainer(app: Application) {
     val settings = Settings(app)
     val importer = ImportManager(app, db, store, settings)
     val controller = PlaybackController(app, db, store, settings)
+    val voicePacks = VoicePackManager(app)
 }
 
 class TouchReaderApp : Application() {

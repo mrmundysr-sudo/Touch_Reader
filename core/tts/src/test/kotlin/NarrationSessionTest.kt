@@ -84,4 +84,24 @@ class NarrationSessionTest {
         s.play()
         assertEquals("S1.", e.queue.first().second)
     }
+
+    @Test fun pausesAtEndOfChapterAndKeepsNextChapterPosition() {
+        val e = FakeEngine(); val s = NarrationSession(book, e)
+        s.pauseAtChapterEnd = true
+        s.play(); repeat(3) { e.speakNext() } // S1..S3 = all of chapter A
+        assertEquals(NarrationState.PAUSED, s.state.value)
+        assertEquals(Position(1, 0), s.position.value)
+        assertTrue(e.queue.isEmpty())
+        assertEquals(listOf("S1.", "S2.", "S3."), e.spoken)
+        s.play() // resumes into the next chapter
+        assertEquals("S4.", e.queue.first().second)
+    }
+
+    @Test fun endOfChapterFlagOnlyFiresOnce() {
+        val e = FakeEngine(); val s = NarrationSession(book, e)
+        s.pauseAtChapterEnd = true
+        s.play(); repeat(3) { e.speakNext() }
+        s.play(); repeat(2) { e.speakNext() }
+        assertEquals(NarrationState.FINISHED, s.state.value)
+    }
 }
