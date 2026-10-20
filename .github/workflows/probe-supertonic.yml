@@ -4,6 +4,12 @@ name: Probe Supertonic
 # and runs the real-model test of the Kotlin port (speech plausibility + real-time factor on a CI CPU).
 on:
   workflow_dispatch:
+  # Also runs when the probe itself changes (needed for GitHub to register a new workflow from a non-default branch).
+  push:
+    branches: ["claude/**"]
+    paths:
+      - ".github/workflows/probe-supertonic.yml"
+      - "scripts/probe-supertonic.sh"
 
 permissions:
   contents: read
