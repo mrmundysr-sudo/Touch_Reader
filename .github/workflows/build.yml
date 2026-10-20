@@ -5,10 +5,18 @@ on:
     branches: [main, "claude/**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Also publish the debug APK as a GitHub pre-release asset"
+        type: boolean
+        default: false
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -27,16 +35,30 @@ jobs:
         run: ./gradlew :app:assembleDebug --stacktrace
       - name: Upload test reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
           path: "**/build/reports/tests/test"
           retention-days: 7
           if-no-files-found: ignore
-      - name: Upload APK
+      # Artifact storage can run out of quota; that must not fail an otherwise good build.
+      - name: Upload APK artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: TouchReader-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
           if-no-files-found: error
+      - name: Publish APK as pre-release asset
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk TouchReader-debug.apk
+          sha256sum TouchReader-debug.apk | tee TouchReader-debug.apk.sha256
+          gh release create "debug-${{ github.run_number }}" TouchReader-debug.apk TouchReader-debug.apk.sha256 \
+            --prerelease --target "${{ github.sha }}" \
+            --title "Touch Reader debug build #${{ github.run_number }}" \
+            --notes "Debug-signed development build from ${{ github.sha }}. Not a release candidate."
