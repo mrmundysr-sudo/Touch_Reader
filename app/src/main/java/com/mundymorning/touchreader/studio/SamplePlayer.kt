@@ -8,32 +8,58 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 
-/** Plays a short voice sample (the recording the user just made, or a saved voice's reference). */
+/**
+ * Plays a short voice sample (the recording the user just made, or a saved voice's reference).
+ * A failure to play is reported through [error]; it never crashes the app.
+ */
 class SamplePlayer(private val cacheDir: File) {
     private var player: MediaPlayer? = null
+    private var temp: File? = null
+
     private val _playingKey = MutableStateFlow<String?>(null)
     val playingKey: StateFlow<String?> = _playingKey.asStateFlow()
 
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    fun clearError() { _error.value = null }
+
     fun play(key: String, file: File) {
-        stop()
-        player = MediaPlayer().apply {
-            setDataSource(file.path)
-            setOnCompletionListener { stop() }
-            setOnErrorListener { _, _, _ -> stop(); true }
-            prepare(); start()
-        }
-        _playingKey.value = key
+        release()
+        start(key, file)
     }
 
     fun playPcm(key: String, pcm: Pcm) {
-        val f = File(cacheDir, "preview.wav").also { it.writeBytes(WavIo.write16(pcm)) }
-        play(key, f)
+        release() // first: releasing must never delete the file we are about to write
+        val f = File(cacheDir, "preview-${System.nanoTime()}.wav")
+        try { f.writeBytes(WavIo.write16(pcm)) } catch (e: Exception) { _error.value = "The sample could not be prepared for playback."; return }
+        temp = f
+        start(key, f)
     }
 
-    fun stop() {
-        player?.let { runCatching { it.stop() }; it.release() }
+    fun stop() = release()
+
+    private fun start(key: String, file: File) {
+        try {
+            player = MediaPlayer().apply {
+                setDataSource(file.path)
+                setOnCompletionListener { release() }
+                setOnErrorListener { _, _, _ -> release(); _error.value = "Playback failed."; true }
+                prepare(); start()
+            }
+            _error.value = null
+            _playingKey.value = key
+        } catch (e: Exception) {
+            release()
+            _error.value = "This sample could not be played (${e.javaClass.simpleName})."
+        }
+    }
+
+    private fun release() {
+        player?.let { runCatching { it.stop() }; runCatching { it.release() } }
         player = null
         _playingKey.value = null
-        File(cacheDir, "preview.wav").delete()
+        temp?.delete()
+        temp = null
     }
 }

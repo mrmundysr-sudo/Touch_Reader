@@ -32,6 +32,7 @@ fun VoiceStudioScreen(container: AppContainer, onClose: () -> Unit) {
     val ui by studio.ui.collectAsState()
     val rec by studio.recorder.state.collectAsState()
     val playing by container.samplePlayer.playingKey.collectAsState()
+    val playerError by container.samplePlayer.error.collectAsState()
     val ctx = LocalContext.current
     var permissionDenied by remember { mutableStateOf(false) }
 
@@ -101,6 +102,7 @@ fun VoiceStudioScreen(container: AppContainer, onClose: () -> Unit) {
                 Text("Microphone access was denied. You can allow it in Android settings, or import an audio file instead.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             rec.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp)) }
+            playerError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp)) }
             ui.message?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp)) }
             ui.busy?.let {
                 Spacer(Modifier.height(12.dp))
