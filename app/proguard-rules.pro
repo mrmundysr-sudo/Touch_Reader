@@ -1,0 +1,10 @@
+-dontwarn com.gemalto.jp2.**
+-dontwarn org.bouncycastle.**
+-keep class com.tom_roush.pdfbox.** { *; }
+-keep class com.tom_roush.fontbox.** { *; }
+-dontwarn javax.xml.**
+-dontwarn org.w3c.dom.**
+-dontwarn org.xml.sax.**
+-dontwarn com.google.re2j.**
+-dontwarn org.jspecify.**
+-dontwarn org.jsoup.**
