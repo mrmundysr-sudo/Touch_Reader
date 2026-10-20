@@ -53,6 +53,86 @@ class VoicePacksTest {
 
     private val http = PackDownloader(allowInsecureHttp = true)
 
+    /** Serves several files under /f/<name> with Range support. */
+    private fun serveFiles(files: Map<String, ByteArray>): String {
+        val s = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        s.createContext("/f/") { ex ->
+            val body = files[ex.requestURI.path.removePrefix("/f/")]
+            val range = ex.requestHeaders.getFirst("Range")
+            requests += ex.requestURI.path + (range?.let { " $it" } ?: "")
+            if (body == null) { ex.sendResponseHeaders(404, -1); ex.close(); return@createContext }
+            if (range != null) {
+                val part = body.copyOfRange(range.removePrefix("bytes=").removeSuffix("-").toInt(), body.size)
+                ex.sendResponseHeaders(206, part.size.toLong()); ex.responseBody.use { it.write(part) }
+            } else { ex.sendResponseHeaders(200, body.size.toLong()); ex.responseBody.use { it.write(body) } }
+        }
+        s.start(); server = s
+        return "http://127.0.0.1:${s.address.port}/f/"
+    }
+
+    private fun filePack(base: String, files: Map<String, ByteArray>) = VoicePack(
+        "multi", "Multi", "", "supertonic", "en", 1, "", files.values.sumOf { it.size.toLong() }, files.values.sumOf { it.size.toLong() }, "",
+        "OpenRAIL-M", null, null,
+        files = files.map { (n, b) -> PackFile("sub/$n", base + n, b.size.toLong(), sha(b)) },
+        notice = "Use restrictions apply", requiresAcceptance = true,
+    )
+
+    @Test fun fileListPackInstallsAllFilesAtomically() {
+        val files = mapOf("a.bin" to noise(3000).toByteArray(), "b.json" to noise(500).toByteArray(), "LICENSE" to noise(200).toByteArray())
+        val pack = filePack(serveFiles(files), files)
+        val store = PackStore(tmp)
+        val progress = mutableListOf<Long>()
+        store.installFiles(pack, http) { d, t -> progress += d; assertEquals(pack.sizeBytes, t) }
+        assertEquals(pack.sizeBytes, progress.last())
+        assertTrue(progress.zipWithNext().all { (a, b) -> b >= a }, "progress went backwards")
+        val dir = store.get("multi")!!.dir
+        files.forEach { (n, b) -> assertContentEquals(b, File(dir, "sub/$n").readBytes()) }
+        assertFalse(File(tmp, "downloads/multi-1.files").exists())
+    }
+
+    @Test fun fileListPackResumesAndSkipsFinishedFiles() {
+        val files = mapOf("a.bin" to noise(3000).toByteArray(), "b.bin" to noise(4000).toByteArray())
+        val pack = filePack(serveFiles(files), files)
+        val store = PackStore(tmp)
+        val staging = File(tmp, "downloads/multi-1.files/sub").also { it.mkdirs() }
+        File(staging, "a.bin").writeBytes(files["a.bin"]!!)                       // already complete
+        File(staging, "b.bin.part").writeBytes(files["b.bin"]!!.copyOfRange(0, 1500)) // half done
+        store.installFiles(pack, http)
+        assertEquals(1, requests.size, "only the unfinished file should be requested: $requests")
+        assertTrue(requests.single()!!.endsWith("b.bin bytes=1500-"))
+        assertEquals(1, store.installed().size)
+    }
+
+    @Test fun oneCorruptFileAbortsWithoutInstalling() {
+        val files = mapOf("a.bin" to noise(1000).toByteArray(), "b.bin" to noise(1000).toByteArray())
+        val good = filePack(serveFiles(files), files)
+        val bad = good.copy(files = good.files.map { if (it.path.endsWith("b.bin")) it.copy(sha256 = "0".repeat(64)) else it })
+        val store = PackStore(tmp)
+        assertFailsWith<ChecksumMismatchException> { store.installFiles(bad, http) }
+        assertTrue(store.installed().isEmpty())
+    }
+
+    @Test fun catalogParsesFileListAndSumsSizes() {
+        val json = """{"packs":[{"id":"m","name":"M","engine":"supertonic","license":"OpenRAIL-M","requiresAcceptance":true,"notice":"n",
+          "files":[{"path":"onnx/a.onnx","url":"https://h.test/a","sizeBytes":100,"sha256":"${"a".repeat(64)}"},
+                   {"path":"LICENSE","url":"https://h.test/l","sizeBytes":20,"sha256":"${"b".repeat(64)}"}]}]}"""
+        val r = VoicePackCatalog.parse(json)
+        assertTrue(r.rejected.isEmpty(), r.rejected.toString())
+        assertEquals(120, r.packs.single().sizeBytes)
+        assertTrue(r.packs.single().requiresAcceptance)
+    }
+
+    @Test fun catalogRejectsUnsafeOrIncompleteFileLists() {
+        fun pack(file: String, extra: String = "") = """{"id":"x","name":"X","engine":"e","license":"L"$extra,"files":[$file]}"""
+        val ok = """{"path":"a","url":"https://h/a","sizeBytes":1,"sha256":"${"a".repeat(64)}"}"""
+        val traversal = ok.replace("\"a\",", "\"../a\",")
+        val http = ok.replace("https://", "http://")
+        val nohash = """{"path":"a","url":"https://h/a","sizeBytes":1}"""
+        val r = VoicePackCatalog.parse("""{"packs":[${pack(ok)},${pack(traversal)},${pack(http)},${pack(nohash)},${pack(ok, ",\"requiresAcceptance\":true")}]}""")
+        assertEquals(1, r.packs.size)
+        assertEquals(4, r.rejected.size)
+    }
+
     @Test fun catalogAcceptsValidAndRejectsIncomplete() {
         val json = """{"packs":[
           {"id":"good","name":"Good","engine":"kokoro","url":"https://x.test/a.zip","sizeBytes":10,"unpackedBytes":40,"sha256":"${"a".repeat(64)}","license":"Apache-2.0"},
@@ -165,5 +245,24 @@ class VoicePacksTest {
         assertTrue(store.sizeOnDisk("test-voice") > 0)
         assertTrue(store.delete("test-voice"))
         assertTrue(store.installed().isEmpty())
+    }
+}
+
+class BundledCatalogTest {
+    private val asset = java.io.File("../../app/src/main/assets/voicepacks.json")
+
+    @Test fun shippedCatalogIsValidAndPinned() {
+        val r = VoicePackCatalog.parse(asset.readText())
+        assertTrue(r.rejected.isEmpty(), "rejected entries: ${r.rejected}")
+        val p = r.packs.single()
+        assertEquals("supertonic-3", p.id)
+        assertEquals(17, p.files.size)
+        assertTrue(p.requiresAcceptance && !p.notice.isNullOrBlank())
+        assertTrue(p.license.contains("OpenRAIL-M"))
+        assertTrue(p.files.any { it.path == "LICENSE" }, "the licence must be installed with the model")
+        assertEquals(setOf("duration_predictor", "text_encoder", "vector_estimator", "vocoder"),
+            p.files.filter { it.path.endsWith(".onnx") }.map { it.path.substringAfter('/').removeSuffix(".onnx") }.toSet())
+        assertTrue(p.files.all { it.url.startsWith("https://huggingface.co/") && it.url.contains("aafc6e32416a594460b32413efc49d7fe4ce6d46") }, "downloads must be pinned to one revision")
+        assertTrue(p.sizeBytes in 390_000_000L..410_000_000L, "size ${p.sizeBytes}")
     }
 }

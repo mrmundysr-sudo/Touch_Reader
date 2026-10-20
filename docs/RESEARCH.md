@@ -57,6 +57,24 @@ Consequence for this build: no neural engine is integrated. What *is* built and 
 (bounded synthesis/playback pipeline with real-time-factor monitoring, resumable verified voice-pack downloads) plus the ability to
 use any other speech engine installed on the phone through Android's TextToSpeech.
 
+## Phase 2b: Supertonic 3 (chosen route for neural voices)
+
+Chosen because it avoids espeak-ng/GPL entirely (the model reads Unicode characters directly) and is small enough to be plausible on phones.
+Everything below was checked from primary sources or measured in CI unless marked otherwise.
+
+- **Code:** MIT (sample code, `supertone-oss-archive/supertonic`). Touch Reader's Kotlin port (`core/supertonic`) follows its Java sample.
+- **Model license:** BigScience **OpenRAIL-M** (full text read from the pinned Hugging Face revision; copy kept at install time in the pack's `LICENSE`).
+  Free and commercial use allowed. Conditions that matter to us: (4a/5) the use restrictions in Attachment A must be passed on to users in an enforceable agreement,
+  (4b) recipients get a copy of the license, (4d) keep notices. Attachment A forbids, among others: impersonation without consent, publishing machine-generated
+  content without disclosing that it is machine generated, medical advice, and legal/justice/law-enforcement decisions. The app shows a summary and requires
+  acceptance before downloading; **audiobook export (Phase 4) must label output as machine-generated**. *This is the developer's reading, not legal advice; have counsel confirm before release.*
+- **Distribution:** files are downloaded by the user straight from Hugging Face at a pinned revision (`aafc6e32…`), each checked against a SHA-256 (the four ONNX hashes also match Hugging Face's own). Touch Reader hosts nothing.
+- **Project status risk:** upstream is **archived** (read-only since Sep 2026, no fixes or support) and the weights moved to the `supertone-oss-archive` namespace. If that host disappears, the pack stops downloading; a mirror would then need to honour OpenRAIL-M 4(a)-(d).
+- **Size:** **401 MB** download and on disk (not ~129 MB as one secondary source claimed): vector_estimator 257 MB, vocoder 101 MB, text_encoder 36 MB, duration_predictor 4 MB, plus voices (≈0.3 MB each).
+- **Quality of port:** the Kotlin port produced plausible, non-silent 44.1 kHz speech from the real weights in CI. **Nobody has listened to it yet**; naturalness is unjudged.
+- **Speed (x86 CI runner, 2 threads, 5.6 s sentence pair):** real-time factor 0.52–0.55 at 8 steps, **0.29 at 4 steps**; model load 1.0–1.3 s; peak process memory ≈ 580–620 MB (includes JVM overhead). Upstream claims RTF 0.3 on an Android e-reader (unverified). **Not measured on any phone.**
+- **No voice cloning:** voices are 10 presets (M1–M5, F1–F5); the hosted Voice Builder that made new styles has shut down. Supertonic does not help with the cloning requirement.
+
 ## Sources
 - Chatterbox repo: https://github.com/resemble-ai/chatterbox
 - Chatterbox ONNX exports: https://huggingface.co/onnx-community/chatterbox-ONNX , https://huggingface.co/ResembleAI/chatterbox-turbo-ONNX

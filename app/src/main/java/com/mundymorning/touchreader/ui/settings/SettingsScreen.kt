@@ -22,6 +22,7 @@ fun SettingsScreen(container: AppContainer) {
     val speed by s.defaultSpeed.collectAsState()
     val size by s.fontSize.collectAsState()
     val cleanup by s.cleanup.collectAsState()
+    val steps by s.neuralSteps.collectAsState()
 
     Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { pad ->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
@@ -39,6 +40,20 @@ fun SettingsScreen(container: AppContainer) {
             Header("Narration")
             LabeledSlider("Default speed for new documents", "${"%.2f".format(speed)}×", speed, 0.7f..2f) { s.setDefaultSpeed((it * 20).toInt() / 20f) }
 
+            Header("Neural voice quality")
+            Column(Modifier.selectableGroup()) {
+                listOf(4 to "Faster (4 steps) — less processing, may sound rougher", 8 to "Best (8 steps) — reference quality, slower").forEach { (n, label) ->
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(steps == n, role = Role.RadioButton, onClick = {
+                            s.setNeuralSteps(n)
+                            if (s.ttsEngine.value == com.mundymorning.touchreader.tts.Engines.NEURAL) container.controller.switchEngine(com.mundymorning.touchreader.tts.Engines.NEURAL)
+                        }).padding(horizontal = 24.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) { RadioButton(steps == n, null); Spacer(Modifier.width(16.dp)); Text(label) }
+                }
+            }
+            Text("Only used if you install the optional neural voice.", Modifier.padding(horizontal = 24.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
             Header("Text cleanup (applies to documents you add next)")
             Toggle("Remove running headers, footers and page numbers", cleanup.removeHeadersAndFooters) { s.setCleanup(cleanup.copy(removeHeadersAndFooters = it)) }
             Toggle("Join words split by a hyphen at line ends", cleanup.joinHyphenatedWords) { s.setCleanup(cleanup.copy(joinHyphenatedWords = it)) }
@@ -53,7 +68,7 @@ fun SettingsScreen(container: AppContainer) {
                 Spacer(Modifier.height(12.dp))
                 Text("Open-source components", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "AndroidX, Jetpack Compose, Room — Apache License 2.0\nPDFBox-Android — Apache License 2.0\njsoup — MIT License\nKotlin and kotlinx.coroutines — Apache License 2.0",
+                    "AndroidX, Jetpack Compose, Room — Apache License 2.0\nPDFBox-Android — Apache License 2.0\nONNX Runtime — MIT License\nSupertonic code — MIT License; Supertonic 3 model — BigScience OpenRAIL-M\njsoup — MIT License\nKotlin and kotlinx.coroutines — Apache License 2.0",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

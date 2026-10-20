@@ -25,27 +25,28 @@ Real-world accuracy of the parsers has not been checked against real books; the 
 
 ## Phase 2 — Advanced Narration
 
-**Decision needed from the owner:** neural voices (Kokoro/Piper via sherpa-onnx) are *not* integrated. The prebuilt sherpa-onnx
-Android library reportedly bundles GPL-3.0 espeak-ng (see `RESEARCH.md`), which could force GPL-3.0 terms on the app, and Kokoro
-measured slower than real time even on an emulator. Choose: (a) accept GPL-3.0 / open-source the app, (b) pursue a non-espeak engine,
-or (c) stay with system voices. Nothing neural will be added until that is decided and measured on a real phone.
+**Kokoro/Piper (sherpa-onnx) are not used**: the prebuilt sherpa-onnx Android library reportedly bundles GPL-3.0 espeak-ng (secondary source) and Kokoro
+ran slower than real time even on an emulator. Per the owner's decision (option 2) the neural route is **Supertonic 3** (no espeak). See `RESEARCH.md` for licence, size and speed.
 
 | Item | State | Evidence |
 |---|---|---|
-| Bounded synthesize-ahead / play pipeline (`core/audio`), gapless queue, cancel, error, speed, RTF + time-to-first-audio stats, slow-engine signal | **Verified** with fake synthesizer/sink | 7 JVM tests |
-| Not yet used by any engine; no Android `AudioTrack` sink written (nothing to feed it) | **Not built** | – |
-| Voice-pack catalog (license/checksum/size mandatory), resumable HTTPS download, SHA-256 verify, free-space check, zip-slip and zip-bomb guards, atomic install, delete (`core/voicepacks`) | **Verified** against a local test server | 12 JVM tests |
-| Voice-pack UI + manager in the app | **Built**, never run. The bundled catalog is **empty**: no pack is published or verified | – |
-| Choose among installed Android speech engines; automatic fallback to system default if the chosen engine fails to start | **Built**, never run | – |
-| Seek slider (`ReaderBook.positionAt`) | core **Verified** (1 test); UI **Built** | – |
-| Sleep timer "end of chapter" (`NarrationSession.pauseAtChapterEnd`) | core **Verified** (2 tests); UI **Built** | – |
-| Sentence highlight, speed, bookmarks, sleep timer (minutes) | from Phase 1; **Built**, never run | – |
+| Supertonic text frontend, config/voice-style parsing, latent math (`core/supertonic`) | **Verified** | 14 JVM tests |
+| Supertonic inference port vs the **real weights** | **Verified in CI only**: plausible, non-silent speech, RTF 0.29–0.55, hashes match | probe workflow run; **not listened to** |
+| Bounded synthesize-ahead / play pipeline (`core/audio`) | **Verified** with fakes | 7 JVM tests |
+| Multi-file voice packs: pinned HTTPS download, resume, per-file SHA-256, free-space check, atomic install, licence stored with model (`core/voicepacks`) | **Verified** against a local server; shipped catalog validated | 18 JVM tests |
+| Voices tab: pack download with licence/terms acceptance, memory warning, engine picker incl. neural voice, auto fallback to system voice if the neural engine fails or is too slow | **Built**, never run | – |
+| Android `AudioTrack` sink + neural engine wrapper | **Built**, never run on a phone | – |
+| Neural voice quality setting (4 or 8 steps) | **Built**, never run | – |
+| Choose among installed Android speech engines + fallback | **Built**, never run | – |
+| Seek slider, "end of chapter" sleep timer | core **Verified**; UI **Built** | 3 tests |
+| Sentence highlight, speed, bookmarks, minute-based sleep timer | from Phase 1; **Built**, never run | – |
 
-Tar/bz2 packs (the format sherpa-onnx publishes) are not supported; packs must be .zip.
+Open risks for the neural voice: 401 MB download and a large memory footprint (may not start on 2–3 GB phones, then the app falls back to the system voice);
+speed on real phone CPUs is unmeasured; upstream is archived; first sentence waits for the model to load; no per-document language detection (uses the phone's language, else language-agnostic mode).
 
 ## Not built
 
-- Kokoro, Piper or any neural engine (see Phase 2 decision above)
+- Kokoro and Piper (ruled out for now; see RESEARCH.md)
 - Voice Studio, recording/import, any cloning (Phase 3). See `RESEARCH.md`: offline cloning is **not validated** on phone hardware.
 - Audiobook export, MP3/M4B (Phase 4)
 - OCR; DOC/RTF/ODT/MOBI/FB2

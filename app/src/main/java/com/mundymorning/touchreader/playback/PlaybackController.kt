@@ -17,6 +17,10 @@ import com.mundymorning.touchreader.data.DocumentEntity
 import com.mundymorning.touchreader.data.DocumentStore
 import com.mundymorning.touchreader.data.Settings
 import com.mundymorning.touchreader.tts.AndroidTtsEngine
+import com.mundymorning.touchreader.tts.AppEngine
+import com.mundymorning.touchreader.tts.Engines
+import com.mundymorning.touchreader.tts.SupertonicAppEngine
+import com.mundymorning.touchreader.voices.VoicePackManager
 import com.mundymorning.touchreader.tts.EngineStatus
 import com.mundymorning.touchreader.tts.TtsEngineInfo
 import com.mundymorning.touchreader.tts.VoiceInfo
@@ -36,6 +40,8 @@ data class PlayerUi(
     val error: String? = null,
     val sleepEndsAt: Long? = null,
     val sleepEndOfChapter: Boolean = false,
+    /** The neural voice cannot keep up with real time on this phone. */
+    val slowEngine: Boolean = false,
 ) {
     val playing get() = state == NarrationState.PLAYING
     val chapterTitle get() = book?.chapters?.getOrNull(position.chapter)?.title.orEmpty()
@@ -51,25 +57,45 @@ class PlaybackController(
     private val db: AppDatabase,
     private val store: DocumentStore,
     private val settings: Settings,
+    private val packs: VoicePackManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     // Created lazily on the main thread so app start-up does not wait for the speech service.
-    private val engineFlow = MutableStateFlow<AndroidTtsEngine?>(null)
+    private val engineFlow = MutableStateFlow<AppEngine?>(null)
     private var statusJob: Job? = null
 
-    private fun engine(): AndroidTtsEngine = engineFlow.value ?: AndroidTtsEngine(app, settings.ttsEngine.value).also { e ->
+    private fun engine(): AppEngine = engineFlow.value ?: createEngine().also { e ->
         engineFlow.value = e
         watchStatus(e)
     }
 
+    private fun createEngine(): AppEngine {
+        if (settings.ttsEngine.value == Engines.NEURAL) {
+            val dir = packs.installedDir(Engines.NEURAL_PACK_ID)
+            if (dir != null) {
+                return SupertonicAppEngine(app, dir, settings.neuralSteps.value).also { e ->
+                    e.onSlow = { scope.launch { _ui.update { it.copy(slowEngine = true) } } }
+                }
+            }
+            settings.setTtsEngine(null) // the pack was deleted: go back to the system voice
+        }
+        return AndroidTtsEngine(app, settings.ttsEngine.value)
+    }
+
     /** Never freeze or crash on a speech engine that will not start: fall back to the system default once. */
-    private fun watchStatus(e: AndroidTtsEngine) {
+    private fun watchStatus(e: AppEngine) {
         statusJob?.cancel()
         statusJob = scope.launch {
             val failed = e.status.first { it is EngineStatus.Failed || it is EngineStatus.Ready }
             if (failed is EngineStatus.Failed && settings.ttsEngine.value != null) {
-                _ui.update { it.copy(error = "The selected speech engine could not start. Using the system default instead.") }
+                val neural = settings.ttsEngine.value == Engines.NEURAL
+                _ui.update {
+                    it.copy(
+                        error = if (neural) "The neural voice could not start on this phone. Using the system voice instead."
+                        else "The selected speech engine could not start. Using the system default instead."
+                    )
+                }
                 switchEngine(null)
             }
         }
@@ -220,7 +246,9 @@ class PlaybackController(
         scope.launch(Dispatchers.IO) { db.documents().setVoice(id, name) }
     }
 
-    /** Switch to another installed Android speech engine (null = system default), keeping place and play state. */
+    fun dismissSlowNotice() { _ui.update { it.copy(slowEngine = false) } }
+
+    /** Switch narrator engine: null = system default, a package name, or [Engines.NEURAL]. Keeps place and play state. */
     fun switchEngine(pkg: String?) {
         settings.setTtsEngine(pkg)
         val ui = _ui.value
@@ -234,7 +262,7 @@ class PlaybackController(
         // Voice names belong to one engine, so a switch resets the narrator to that engine's default.
         e.setVoice(null)
         ui.docId?.let { id -> scope.launch(Dispatchers.IO) { db.documents().setVoice(id, null) } }
-        _ui.update { it.copy(voiceName = null, state = NarrationState.IDLE) }
+        _ui.update { it.copy(voiceName = null, state = NarrationState.IDLE, slowEngine = false) }
         ui.book?.let { attachSession(it, ui.position) }
         if (wasPlaying) play()
     }

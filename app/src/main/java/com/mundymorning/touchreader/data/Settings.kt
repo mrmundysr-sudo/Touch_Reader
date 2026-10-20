@@ -29,6 +29,16 @@ class Settings(context: Context) {
     val ttsEngine: StateFlow<String?> = _ttsEngine.asStateFlow()
     fun setTtsEngine(pkg: String?) { _ttsEngine.value = pkg; prefs.edit().putString("ttsEngine", pkg).apply() }
 
+    private val _neuralSteps = MutableStateFlow(prefs.getInt("neuralSteps", 8))
+    /** Denoising steps for the neural voice: fewer is faster, 8 is the reference quality. */
+    val neuralSteps: StateFlow<Int> = _neuralSteps.asStateFlow()
+    fun setNeuralSteps(n: Int) { _neuralSteps.value = n; prefs.edit().putInt("neuralSteps", n).apply() }
+
+    /** Records that the user accepted a pack's terms (pack id, version, time). */
+    fun recordAcceptance(packId: String, version: Int) {
+        prefs.edit().putLong("accepted_${packId}_$version", System.currentTimeMillis()).apply()
+    }
+
     private val _defaultSpeed = MutableStateFlow(prefs.getFloat("defaultSpeed", 1f))
     val defaultSpeed: StateFlow<Float> = _defaultSpeed.asStateFlow()
     fun setDefaultSpeed(v: Float) { _defaultSpeed.value = v; prefs.edit().putFloat("defaultSpeed", v).apply() }

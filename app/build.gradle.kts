@@ -39,6 +39,10 @@ dependencies {
     implementation(project(":core:reader"))
     implementation(project(":core:tts"))
     implementation(project(":core:voicepacks"))
+    implementation(project(":core:audio"))
+    implementation(project(":core:supertonic"))
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.23.1")
+    implementation("org.json:json:20240303") { because("none: platform org.json is used at runtime") }
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.3")

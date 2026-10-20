@@ -1,6 +1,10 @@
 package com.mundymorning.touchreader.ui.voices
 
+import android.app.ActivityManager
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.mundymorning.touchreader.AppContainer
 import com.mundymorning.touchreader.core.voicepacks.VoicePack
 import com.mundymorning.touchreader.tts.EngineStatus
+import com.mundymorning.touchreader.tts.Engines
 import com.mundymorning.touchreader.tts.VoiceInfo
 import com.mundymorning.touchreader.voices.PackState
 import java.util.Locale
@@ -35,9 +40,11 @@ fun VoicesScreen(container: AppContainer) {
     var allLanguages by remember { mutableStateOf(false) }
     var pickEngine by remember { mutableStateOf(false) }
     var confirmPack by remember { mutableStateOf<VoicePack?>(null) }
+    var accepted by remember { mutableStateOf(false) }
+    val neuralInstalled = packStates[Engines.NEURAL_PACK_ID] is PackState.Installed
     val lang = Locale.getDefault().language
-    val shown = remember(voices, allLanguages) { if (allLanguages) voices else voices.filter { it.language == lang } }
-    val engineLabel = engines.firstOrNull { it.packageName == (chosenEngine ?: controller.defaultEnginePackage) }?.label ?: "System default"
+    val shown = remember(voices, allLanguages) { if (allLanguages) voices else voices.filter { it.language == lang || it.language.isEmpty() } }
+    val engineLabel = if (chosenEngine == Engines.NEURAL) "Neural voice (Supertonic 3)" else engines.firstOrNull { it.packageName == (chosenEngine ?: controller.defaultEnginePackage) }?.label ?: "System default"
 
     Scaffold(topBar = { TopAppBar(title = { Text("Voices") }) }) { pad ->
         LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -77,7 +84,7 @@ fun VoicesScreen(container: AppContainer) {
             item {
                 SectionHeader(
                     "Downloaded offline voices",
-                    "Neural voice packs (such as Kokoro or Piper) are not part of this version: no pack has been published and no neural engine is built in yet.",
+                    "Optional offline neural voices. They are large downloads and need a reasonably powerful phone.",
                 )
             }
             if (container.voicePacks.catalog.isEmpty()) {
@@ -85,7 +92,11 @@ fun VoicesScreen(container: AppContainer) {
             }
             items(container.voicePacks.catalog, key = { it.id }) { p ->
                 PackRow(p, packStates[p.id] ?: PackState.Available,
-                    onDownload = { confirmPack = p }, onCancel = { container.voicePacks.cancel(p.id) }, onDelete = { container.voicePacks.delete(p.id) })
+                    onDownload = { accepted = false; confirmPack = p }, onCancel = { container.voicePacks.cancel(p.id) },
+                    onDelete = {
+                        if (p.id == Engines.NEURAL_PACK_ID && chosenEngine == Engines.NEURAL) controller.switchEngine(null)
+                        container.voicePacks.delete(p.id)
+                    })
             }
             item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
             item { SectionHeader("My voices", "Creating your own narrator from a recording (Voice Studio) is planned. It is not available in this version.") }
@@ -100,9 +111,13 @@ fun VoicesScreen(container: AppContainer) {
                 Column {
                     Text("Other speech engines you install in Android settings appear here. Changing engine resets the narrator for the open book.", style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(8.dp))
-                    val options = listOf<String?>(null) + engines.map { it.packageName }
+                    val options = listOf<String?>(null) + engines.map { it.packageName } + (if (neuralInstalled) listOf(Engines.NEURAL) else emptyList())
                     options.forEach { pkg ->
-                        val label = if (pkg == null) "System default" else engines.first { it.packageName == pkg }.label
+                        val label = when (pkg) {
+                            null -> "System default"
+                            Engines.NEURAL -> "Neural voice (Supertonic 3) — offline"
+                            else -> engines.first { it.packageName == pkg }.label
+                        }
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(chosenEngine == pkg, role = Role.RadioButton) {
                                 if (chosenEngine != pkg) controller.switchEngine(pkg)
@@ -118,11 +133,42 @@ fun VoicesScreen(container: AppContainer) {
     }
 
     confirmPack?.let { p ->
+        val ctx = LocalContext.current
+        val totalGb = remember { ctx.getSystemService(ActivityManager::class.java).let { am -> ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem / 1e9 } }
         AlertDialog(
             onDismissRequest = { confirmPack = null },
             title = { Text("Download ${p.name}?") },
-            text = { Text("This downloads about ${p.sizeBytes / 1_000_000} MB and stores up to ${p.unpackedBytes / 1_000_000} MB on your phone. It uses your data connection, so Wi-Fi is recommended.\n\nLicense: ${p.license}") },
-            confirmButton = { TextButton({ container.voicePacks.download(p); confirmPack = null }) { Text("Download") } },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("Downloads about ${p.sizeBytes / 1_000_000} MB directly from the model's publisher and stores it on your phone. It uses your data connection, so Wi-Fi is recommended.")
+                    if (totalGb < 3.5) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "This phone has about ${"%.1f".format(totalGb)} GB of memory. The neural voice is large and may not run well here. If it cannot start, Touch Reader switches back to the system voice automatically.",
+                            color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("License: ${p.license}", style = MaterialTheme.typography.titleSmall)
+                    p.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    if (p.requiresAcceptance) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(accepted, role = Role.Checkbox) { accepted = !accepted },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) { Checkbox(accepted, null); Spacer(Modifier.width(8.dp)); Text("I have read and agree to these terms") }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = accepted || !p.requiresAcceptance,
+                    onClick = {
+                        if (p.requiresAcceptance) container.settings.recordAcceptance(p.id, p.version)
+                        container.voicePacks.download(p); confirmPack = null
+                    },
+                ) { Text("Download") }
+            },
             dismissButton = { TextButton({ confirmPack = null }) { Text("Cancel") } },
         )
     }

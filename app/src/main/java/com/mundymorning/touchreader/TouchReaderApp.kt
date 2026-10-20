@@ -16,8 +16,8 @@ class AppContainer(app: Application) {
     val store = DocumentStore(app)
     val settings = Settings(app)
     val importer = ImportManager(app, db, store, settings)
-    val controller = PlaybackController(app, db, store, settings)
     val voicePacks = VoicePackManager(app)
+    val controller = PlaybackController(app, db, store, settings, voicePacks)
 }
 
 class TouchReaderApp : Application() {

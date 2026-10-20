@@ -73,6 +73,52 @@ class PackStore(private val root: File) {
         }
     }
 
+    private fun stagingDir(pack: VoicePack) = File(downloadsDir, "${pack.id}-${pack.version}.files")
+
+    /**
+     * File-list packs: download every file (resumable, each verified against its own SHA-256) into a staging
+     * folder, then move the finished folder into place in one step. Files that are already complete are skipped,
+     * so an interrupted install continues instead of starting over.
+     */
+    fun installFiles(
+        pack: VoicePack,
+        downloader: PackDownloader = PackDownloader(),
+        isCancelled: () -> Boolean = { false },
+        onProgress: (done: Long, total: Long) -> Unit = { _, _ -> },
+    ) {
+        require(pack.isFileList) { "Not a file-list pack" }
+        val staging = stagingDir(pack).also { it.mkdirs() }
+        val remaining = pack.files.sumOf { f ->
+            val done = File(staging, f.path)
+            if (done.isFile && done.length() == f.sizeBytes) 0L else f.sizeBytes - File(staging, f.path + ".part").length().coerceAtMost(f.sizeBytes)
+        }
+        val needed = (remaining * 1.1).toLong()
+        if (staging.usableSpace < needed) throw InsufficientSpaceException(needed, staging.usableSpace)
+
+        var finished = 0L
+        for (f in pack.files) {
+            val dest = File(staging, f.path)
+            dest.parentFile?.mkdirs()
+            if (dest.isFile && dest.length() == f.sizeBytes && PackDownloader.sha256(dest) == f.sha256) {
+                finished += f.sizeBytes; onProgress(finished, pack.sizeBytes); continue
+            }
+            val base = finished
+            downloader.downloadFile(f.url, f.sizeBytes, f.sha256, File(staging, f.path + ".part"), dest, isCancelled) { d, _ ->
+                onProgress(base + d, pack.sizeBytes)
+            }
+            finished += f.sizeBytes
+        }
+        installedDir.mkdirs()
+        val finalDir = File(installedDir, pack.id)
+        finalDir.deleteRecursively()
+        File(staging, META).writeText(
+            JSONObject().put("id", pack.id).put("version", pack.version).put("name", pack.name)
+                .put("engine", pack.engine).put("license", pack.license)
+                .put("licenseUrl", pack.licenseUrl ?: JSONObject.NULL).put("installedAt", System.currentTimeMillis()).toString()
+        )
+        if (!staging.renameTo(finalDir)) throw IOException("Could not move the pack into place.")
+    }
+
     /** Download (resumable), verify, install, then remove the archive. */
     fun installFromNetwork(
         pack: VoicePack,

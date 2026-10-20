@@ -30,20 +30,20 @@ sealed interface EngineStatus {
 }
 
 /** Baseline/fallback engine using whatever speech service is installed on the phone. */
-class AndroidTtsEngine(context: Context, enginePackage: String? = null) : SpeechEngine {
+class AndroidTtsEngine(context: Context, enginePackage: String? = null) : AppEngine {
     override var listener: SpeechEngine.Listener? = null
 
     private val _status = MutableStateFlow<EngineStatus>(EngineStatus.Initializing)
-    val status: StateFlow<EngineStatus> = _status.asStateFlow()
+    override val status: StateFlow<EngineStatus> = _status.asStateFlow()
 
     private val _voices = MutableStateFlow<List<VoiceInfo>>(emptyList())
-    val voices: StateFlow<List<VoiceInfo>> = _voices.asStateFlow()
+    override val voices: StateFlow<List<VoiceInfo>> = _voices.asStateFlow()
 
     private val _engines = MutableStateFlow<List<TtsEngineInfo>>(emptyList())
     /** Speech engines installed on the phone (available once initialized). */
-    val engines: StateFlow<List<TtsEngineInfo>> = _engines.asStateFlow()
+    override val engines: StateFlow<List<TtsEngineInfo>> = _engines.asStateFlow()
 
-    @Volatile var defaultEnginePackage: String? = null
+    @Volatile override var defaultEnginePackage: String? = null
         private set
 
     private val lock = Any()
@@ -130,7 +130,7 @@ class AndroidTtsEngine(context: Context, enginePackage: String? = null) : Speech
     }
 
     /** Select a voice by name; null restores the system default for the device language. */
-    fun setVoice(name: String?) {
+    override fun setVoice(name: String?) {
         synchronized(lock) {
             voiceName = name
             val engine = tts
@@ -139,7 +139,7 @@ class AndroidTtsEngine(context: Context, enginePackage: String? = null) : Speech
     }
 
     /** Speak a short sample with [name] (stops anything currently queued). */
-    fun preview(name: String, sample: String) {
+    override fun preview(name: String, sample: String) {
         synchronized(lock) {
             val engine = tts ?: return
             if (!ready) return

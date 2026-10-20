@@ -70,6 +70,15 @@ fun ReaderScreen(container: AppContainer, docId: Long, autoPlay: Boolean, onBack
         if (ui.book != null) viewChapter = ui.position.chapter
     }
     LaunchedEffect(ui.error) { ui.error?.let { snackbar.showSnackbar(it) } }
+    LaunchedEffect(ui.slowEngine) {
+        if (ui.slowEngine) {
+            val r = snackbar.showSnackbar(
+                "The neural voice is too slow on this phone to keep up.",
+                actionLabel = "Use system voice", withDismissAction = true, duration = SnackbarDuration.Indefinite,
+            )
+            if (r == SnackbarResult.ActionPerformed) controller.switchEngine(null) else controller.dismissSlowNotice()
+        }
+    }
 
     val book = ui.book
     Scaffold(
@@ -298,7 +307,7 @@ private fun VoiceSheet(container: AppContainer, selected: String?, onDismiss: ()
             )
         }
         if (status is EngineStatus.Failed) item { Text((status as EngineStatus.Failed).message, Modifier.padding(24.dp)) }
-        val list = voices.filter { it.language == lang && it.installed }
+        val list = voices.filter { (it.language == lang || it.language.isEmpty()) && it.installed }
         items(list.size) { i ->
             val v = list[i]
             ListItem(

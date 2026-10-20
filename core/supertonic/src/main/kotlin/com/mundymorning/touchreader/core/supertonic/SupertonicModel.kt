@@ -165,7 +165,8 @@ class SupertonicModel private constructor(
 /** Adapts [SupertonicModel] to the engine-neutral [Synthesizer] so the buffered pipeline can drive it. */
 class SupertonicSynthesizer(
     private val model: SupertonicModel,
-    private val style: VoiceStyle,
+    /** Replaceable so the narrator can change without reloading the model. */
+    @Volatile var style: VoiceStyle,
     private val lang: String = "en",
     private val totalSteps: Int = 8,
     private val chunkSilenceSec: Float = 0.3f,

@@ -50,11 +50,10 @@ class VoicePackManager(private val context: Context) {
             val job = coroutineContext[Job]!!
             set(pack.id, PackState.Downloading(0, pack.sizeBytes))
             try {
-                store.installFromNetwork(
-                    pack, PackDownloader(),
-                    isCancelled = { !job.isActive },
-                    onProgress = { d, t -> if (d < t) set(pack.id, PackState.Downloading(d, t)) else set(pack.id, PackState.Installing) },
-                )
+                val cancelled = { !job.isActive }
+                val progress = { d: Long, t: Long -> if (d < t) set(pack.id, PackState.Downloading(d, t)) else set(pack.id, PackState.Installing) }
+                if (pack.isFileList) store.installFiles(pack, PackDownloader(), cancelled, progress)
+                else store.installFromNetwork(pack, PackDownloader(), cancelled, progress)
                 set(pack.id, PackState.Installed(store.sizeOnDisk(pack.id)))
             } catch (e: DownloadCancelledException) {
                 set(pack.id, PackState.Available) // partial file is kept so the next attempt resumes
@@ -77,6 +76,8 @@ class VoicePackManager(private val context: Context) {
         }
     }
 
-    /** Folder of an installed pack, for a future engine to load. */
+    fun isInstalled(id: String) = store.get(id) != null
+
+    /** Folder of an installed pack, for an engine to load. */
     fun installedDir(id: String): File? = store.get(id)?.dir
 }

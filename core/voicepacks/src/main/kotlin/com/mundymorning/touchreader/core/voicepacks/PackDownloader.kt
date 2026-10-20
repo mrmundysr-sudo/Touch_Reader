@@ -19,24 +19,30 @@ class PackDownloader(
     private val allowInsecureHttp: Boolean = false, // tests only
     private val open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
 ) {
-    fun download(
-        pack: VoicePack,
+    fun download(pack: VoicePack, partFile: File, destFile: File, isCancelled: () -> Boolean = { false }, onProgress: (done: Long, total: Long) -> Unit = { _, _ -> }) =
+        downloadFile(pack.url, pack.sizeBytes, pack.sha256, partFile, destFile, isCancelled, onProgress)
+
+    /** Download one file from [urlString], verifying exact [sizeBytes] and [sha256]. */
+    fun downloadFile(
+        urlString: String,
+        sizeBytes: Long,
+        sha256: String,
         partFile: File,
         destFile: File,
         isCancelled: () -> Boolean = { false },
         onProgress: (done: Long, total: Long) -> Unit = { _, _ -> },
     ) {
-        val url = URL(pack.url)
+        val url = URL(urlString)
         require(url.protocol == "https" || (allowInsecureHttp && url.protocol == "http")) { "Only https downloads are allowed." }
         partFile.parentFile?.mkdirs()
-        if (partFile.length() > pack.sizeBytes) partFile.delete()
+        if (partFile.length() > sizeBytes) partFile.delete()
 
         var have = partFile.length()
         val dir = partFile.parentFile ?: File(".")
-        val needed = ((pack.sizeBytes - have) * 1.1).toLong()
+        val needed = ((sizeBytes - have) * 1.1).toLong()
         if (dir.usableSpace < needed) throw InsufficientSpaceException(needed, dir.usableSpace)
 
-        if (have < pack.sizeBytes) {
+        if (have < sizeBytes) {
             val conn = open(url)
             conn.connectTimeout = 15_000
             conn.readTimeout = 30_000
@@ -59,8 +65,8 @@ class PackDownloader(
                             if (n < 0) break
                             out.write(buf, 0, n)
                             have += n
-                            onProgress(have, pack.sizeBytes)
-                            if (have > pack.sizeBytes) break
+                            onProgress(have, sizeBytes)
+                            if (have > sizeBytes) break
                         }
                     }
                 }
@@ -69,14 +75,14 @@ class PackDownloader(
             }
         }
 
-        if (partFile.length() != pack.sizeBytes || sha256(partFile) != pack.sha256) {
+        if (partFile.length() != sizeBytes || sha256(partFile) != sha256) {
             partFile.delete()
             throw ChecksumMismatchException()
         }
         destFile.parentFile?.mkdirs()
         destFile.delete()
         if (!partFile.renameTo(destFile)) throw IOException("Could not finalize download.")
-        onProgress(pack.sizeBytes, pack.sizeBytes)
+        onProgress(sizeBytes, sizeBytes)
     }
 
     companion object {

@@ -2,28 +2,42 @@ package com.mundymorning.touchreader.core.voicepacks
 
 import org.json.JSONObject
 
+/** One file of a multi-file pack, fetched straight from its original host. */
+data class PackFile(val path: String, val url: String, val sizeBytes: Long, val sha256: String)
+
 /**
  * One downloadable voice/model package. Every field that matters for legal and integrity reasons
  * (license, checksum, size) is mandatory: an entry missing any of them is rejected, not guessed.
+ *
+ * A pack is either a single .zip ([url]) or a list of [files] (preferred when the upstream host serves
+ * the files individually, so Touch Reader never re-hosts the weights).
  */
 data class VoicePack(
     val id: String,
     val name: String,
     val description: String,
-    /** Which synthesizer understands the files, e.g. "kokoro" or "piper". */
+    /** Which synthesizer understands the files, e.g. "supertonic". */
     val engine: String,
     val language: String,
     val version: Int,
-    /** A .zip archive. */
+    /** Archive URL for zip packs; empty for file-list packs. */
     val url: String,
+    /** Total bytes to download. */
     val sizeBytes: Long,
-    /** Declared unpacked size; install refuses archives that expand beyond it (zip-bomb guard). Mandatory. */
+    /** Declared unpacked size; install refuses archives that expand beyond it (zip-bomb guard). */
     val unpackedBytes: Long,
+    /** Archive checksum for zip packs; empty for file-list packs (each file has its own). */
     val sha256: String,
     val license: String,
     val licenseUrl: String?,
     val attribution: String?,
-)
+    val files: List<PackFile> = emptyList(),
+    /** Terms the user must accept before downloading (e.g. use restrictions that must be passed on). */
+    val notice: String? = null,
+    val requiresAcceptance: Boolean = false,
+) {
+    val isFileList get() = files.isNotEmpty()
+}
 
 data class CatalogResult(val packs: List<VoicePack>, val rejected: List<String>)
 
@@ -41,13 +55,22 @@ object VoicePackCatalog {
             val label = o.optString("id", "#$i")
             val problem = validate(o)
             if (problem != null) { rejected += "$label: $problem"; continue }
+            val files = o.optJSONArray("files")?.let { fa ->
+                (0 until fa.length()).map { k ->
+                    val f = fa.getJSONObject(k)
+                    PackFile(f.getString("path"), f.getString("url"), f.getLong("sizeBytes"), f.getString("sha256").lowercase())
+                }
+            }.orEmpty()
+            val total = if (files.isNotEmpty()) files.sumOf { it.sizeBytes } else o.getLong("sizeBytes")
             packs += VoicePack(
                 id = o.getString("id"), name = o.getString("name"), description = o.optString("description"),
                 engine = o.getString("engine"), language = o.optString("language"), version = o.optInt("version", 1),
-                url = o.getString("url"), sizeBytes = o.getLong("sizeBytes"),
-                unpackedBytes = o.getLong("unpackedBytes"),
-                sha256 = o.getString("sha256").lowercase(), license = o.getString("license"),
+                url = o.optString("url"), sizeBytes = total,
+                unpackedBytes = if (files.isNotEmpty()) total else o.getLong("unpackedBytes"),
+                sha256 = o.optString("sha256").lowercase(), license = o.getString("license"),
                 licenseUrl = o.optString("licenseUrl").ifEmpty { null }, attribution = o.optString("attribution").ifEmpty { null },
+                files = files, notice = o.optString("notice").ifEmpty { null },
+                requiresAcceptance = o.optBoolean("requiresAcceptance", false),
             )
         }
         return CatalogResult(packs, rejected)
@@ -57,11 +80,26 @@ object VoicePackCatalog {
         if (!idPattern.matches(o.optString("id"))) return "bad id"
         if (o.optString("name").isBlank()) return "missing name"
         if (o.optString("engine").isBlank()) return "missing engine"
+        if (o.optString("license").isBlank()) return "missing license"
+        if (o.optBoolean("requiresAcceptance", false) && o.optString("notice").isBlank()) return "requiresAcceptance without a notice"
+        val files = o.optJSONArray("files")
+        if (files != null && files.length() > 0) {
+            val seen = HashSet<String>()
+            for (k in 0 until files.length()) {
+                val f = files.optJSONObject(k) ?: return "file #$k is not an object"
+                val path = f.optString("path")
+                if (path.isBlank() || path.startsWith("/") || path.split('/').any { it == ".." || it.isEmpty() }) return "file #$k has an unsafe path"
+                if (!seen.add(path)) return "duplicate file path $path"
+                if (!f.optString("url").startsWith("https://")) return "file '$path' url must be https"
+                if (f.optLong("sizeBytes") <= 0) return "file '$path' missing sizeBytes"
+                if (!shaPattern.matches(f.optString("sha256").lowercase())) return "file '$path' missing or malformed sha256"
+            }
+            return null
+        }
         if (!o.optString("url").startsWith("https://")) return "url must be https"
         if (o.optLong("sizeBytes") <= 0) return "missing sizeBytes"
         if (o.optLong("unpackedBytes") <= 0) return "missing unpackedBytes"
         if (!shaPattern.matches(o.optString("sha256").lowercase())) return "missing or malformed sha256"
-        if (o.optString("license").isBlank()) return "missing license"
         return null
     }
 }
