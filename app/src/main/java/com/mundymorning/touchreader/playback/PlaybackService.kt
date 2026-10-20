@@ -24,44 +24,44 @@ import kotlinx.coroutines.flow.collectLatest
  * notification and routes headset / Bluetooth / lock-screen buttons to [PlaybackController].
  */
 class PlaybackService : Service() {
-    private lateinit var controller: PlaybackController
+    private lateinit var playback: PlaybackController
     private lateinit var session: MediaSessionCompat
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var foreground = false
     private var wakeLock: PowerManager.WakeLock? = null
 
     private val noisyReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) { controller.pause() }
+        override fun onReceive(context: Context?, intent: Intent?) { playback.pause() }
     }
 
     override fun onCreate() {
         super.onCreate()
-        controller = (application as TouchReaderApp).container.controller
+        playback = (application as TouchReaderApp).container.controller
         createChannel()
         session = MediaSessionCompat(this, "TouchReader").apply {
             setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() = controller.play()
-                override fun onPause() = controller.pause()
-                override fun onSkipToNext() = controller.nextSentence()
-                override fun onSkipToPrevious() = controller.previousSentence()
-                override fun onFastForward() = controller.nextChapter()
-                override fun onRewind() = controller.previousChapter()
-                override fun onStop() = controller.pause()
+                override fun onPlay() = playback.play()
+                override fun onPause() = playback.pause()
+                override fun onSkipToNext() = playback.nextSentence()
+                override fun onSkipToPrevious() = playback.previousSentence()
+                override fun onFastForward() = playback.nextChapter()
+                override fun onRewind() = playback.previousChapter()
+                override fun onStop() = playback.pause()
             })
             isActive = true
         }
         registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
-        scope.launch { controller.ui.collectLatest { render(it) } }
+        scope.launch { playback.ui.collectLatest { render(it) } }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_TOGGLE -> controller.toggle()
-            ACTION_NEXT -> controller.nextSentence()
-            ACTION_PREV -> controller.previousSentence()
+            ACTION_TOGGLE -> playback.toggle()
+            ACTION_NEXT -> playback.nextSentence()
+            ACTION_PREV -> playback.previousSentence()
         }
-        if (!foreground) enterForeground(buildNotification(controller.ui.value))
-        if (controller.ui.value.book == null) { stopSelf(); return START_NOT_STICKY }
+        if (!foreground) enterForeground(buildNotification(playback.ui.value))
+        if (playback.ui.value.book == null) { stopSelf(); return START_NOT_STICKY }
         return START_NOT_STICKY
     }
 
@@ -158,7 +158,7 @@ class PlaybackService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if (!controller.ui.value.playing) stopSelf()
+        if (!playback.ui.value.playing) stopSelf()
     }
 
     override fun onDestroy() {
