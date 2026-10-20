@@ -100,10 +100,35 @@ speed of third-party conversions are unverified, and a phone port would also nee
 Better-fitting idea to probe next: **voice conversion on top of the fast base voice** (e.g. OpenVoice V2's tone-colour converter, MIT) — Supertonic already runs at RTF ≈ 0.3 on a CI CPU,
 so the added cost would be only the converter. Unevaluated: converter size/speed, ONNX export, quality, Android feasibility.
 
+## Phase 3 probe 2: OpenVoice V2 tone-colour converter after Supertonic (CI run, Oct 2026)
+
+Idea: keep Supertonic as the fast base voice and convert its output to the user's timbre with OpenVoice V2's converter (a voice *converter*, not a full TTS).
+Method: pinned OpenVoice commit `74a1d14`, HF weights `myshell-ai/OpenVoiceV2` @ `f36e7ed`, 2-vCPU x86 CI runner, synthetic Supertonic voices only
+(source M1 -> target F1 and back). Samples: pre-release `probe-openvoice-1`.
+
+| Question | Result |
+|---|---|
+| Licence | **MIT** (code and HF model card), not gated, free for commercial use |
+| Size | converter checkpoint **131 MB** (32.8M parameters); ONNX export **128 MB** (+3.3 MB speaker-embedding model) |
+| Voice profile | one 256-float speaker embedding = **1 KB** (no recording has to be kept for synthesis) |
+| Timbre moves to the target? | **Yes.** OpenVoice's encoder: similarity to target 0.81 / 0.86 vs to source 0.39 / 0.33. Independent encoder (Resemblyzer): to target 0.89 / 0.79 vs to source 0.66 / 0.64. **Nobody has listened yet.** Weaknesses to expect: output is 22.05 kHz, prosody/accent stay those of the base voice |
+| PyTorch CPU speed | real-time factor 1.10–1.15 (slower than real time), 2 vCPUs |
+| **ONNX Runtime CPU speed** | **real-time factor 0.66** (2 threads, 14.5 s clip) — the runtime an Android build would use |
+| ONNX export | works (opset 17, dynamic length); speaker-embedding model matches PyTorch to 3e-6; converted timbre statistics match (0.815 to target) |
+| Memory | peak 3.6 GB for the whole PyTorch test (58 s clip, PyTorch overhead). ONNX Runtime memory on its own **not measured** — long audio must be converted in short chunks |
+| Combined estimate | Supertonic (RTF ≈ 0.29 at 4 steps) + converter (≈ 0.66) ≈ **0.95** on this CPU: borderline real-time here, slower on weak phone CPUs; fine for background export |
+| Total download | Supertonic 401 MB + converter ~128 MB |
+
+**Verdict: the only cloning route so far that is plausible on phones**, but unproven: needs (1) a listening check, (2) tests with real, noisy phone recordings
+(not tried — all references were synthetic), (3) ONNX Runtime memory and speed on a real phone, (4) a hosting decision for the converted ONNX (the upstream checkpoint is a pickle `.pth`, which the app must never load).
+Weights are MIT, so a converted ONNX may be redistributed with the MIT notice.
+The converter changes timbre only: it will not copy accent or speaking style, and it adds no consent check, so the in-app acknowledgement and OpenRAIL-M rule against impersonation without consent still apply.
+
 ## Sources
 - Chatterbox repo: https://github.com/resemble-ai/chatterbox
 - Chatterbox ONNX exports: https://huggingface.co/onnx-community/chatterbox-ONNX , https://huggingface.co/ResembleAI/chatterbox-turbo-ONNX
 - OpenVoice V2 model card: https://huggingface.co/myshell-ai/OpenVoiceV2
+- OpenVoice V2 probe run and samples: https://github.com/mrmundysr-sudo/Touch_Reader/releases/tag/probe-openvoice-1
 - Chatterbox Nano probe run and samples: https://github.com/mrmundysr-sudo/Touch_Reader/releases/tag/probe-chatterbox-1
 - On-device TTS benchmark: https://picovoice.ai/blog/on-device-tts/
 - sherpa-onnx license/RTF spike (secondary): https://github.com/muxable/rtchat/issues/1500
