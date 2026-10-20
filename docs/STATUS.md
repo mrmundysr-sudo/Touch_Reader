@@ -83,7 +83,7 @@ Limits that will not go away: it changes timbre only (accent, rhythm and wording
 - Performance, battery and low-memory measurements (none taken)
 - Accessibility audit, license audit, Play policy review (Phase 5)
 
-The Voices tab states plainly that downloaded and custom voices are not available yet.
+The Voices tab lists the optional downloads (neural voice, voice cloning add-on) with their size, licence and what they need first.
 
 ## Known limitations / risks
 
