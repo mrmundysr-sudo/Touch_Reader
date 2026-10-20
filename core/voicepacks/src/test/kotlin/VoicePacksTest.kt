@@ -278,8 +278,8 @@ class BundledCatalogTest {
     @Test fun shippedCatalogIsValidAndPinned() {
         val r = VoicePackCatalog.parse(asset.readText())
         assertTrue(r.rejected.isEmpty(), "rejected entries: ${r.rejected}")
-        val p = r.packs.single()
-        assertEquals("supertonic-3", p.id)
+        assertEquals(setOf("supertonic-3", "openvoice-converter-v1"), r.packs.map { it.id }.toSet())
+        val p = r.packs.first { it.id == "supertonic-3" }
         assertEquals(17, p.files.size)
         assertTrue(p.requiresAcceptance && !p.notice.isNullOrBlank())
         assertTrue(p.license.contains("OpenRAIL-M"))
@@ -288,6 +288,15 @@ class BundledCatalogTest {
             p.files.filter { it.path.endsWith(".onnx") }.map { it.path.substringAfter('/').removeSuffix(".onnx") }.toSet())
         assertTrue(p.files.all { it.url.startsWith("https://huggingface.co/") && it.url.contains("aafc6e32416a594460b32413efc49d7fe4ce6d46") }, "downloads must be pinned to one revision")
         assertTrue(p.sizeBytes in 390_000_000L..410_000_000L, "size ${p.sizeBytes}")
+    }
+
+    @Test fun converterPackIsCompleteAndRequiresTheNeuralVoice() {
+        val c = VoicePackCatalog.parse(asset.readText()).packs.first { it.id == "openvoice-converter-v1" }
+        assertEquals(listOf("supertonic-3"), c.requires)
+        assertEquals(setOf("vc.onnx", "se.onnx", "source_embeddings.json", "converter_config.json", "LICENSE.txt", "NOTICE.txt"), c.files.map { it.path }.toSet())
+        assertTrue(c.requiresAcceptance && c.notice!!.contains("impersonate"))
+        assertTrue(c.files.all { it.url.startsWith("https://github.com/") && it.url.contains("/releases/download/converter-v1/") })
+        assertTrue(c.sizeBytes in 125_000_000L..135_000_000L, "size ${c.sizeBytes}")
     }
 
     /** Regression guard: voice-pack downloads fail on a real phone ("missing INTERNET permission?") without it. */
