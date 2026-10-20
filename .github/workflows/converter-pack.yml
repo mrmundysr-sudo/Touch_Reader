@@ -35,7 +35,9 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - name: Fetch Supertonic and make synthetic reference voices (all ten presets)
+        shell: bash
         run: |
+          set -o pipefail
           ./scripts/probe-supertonic.sh > /dev/null
           SUPERTONIC_REF_OUT="$REF_DIR" SUPERTONIC_REF_VOICES="M1,M2,M3,M4,M5,F1,F2,F3,F4,F5" ./gradlew -PjvmOnly=true :core:supertonic:test --tests '*writeSyntheticReferenceClips' --rerun -i | grep -E "WROTE|FAILED|BUILD"
       - uses: actions/setup-python@v5
@@ -50,8 +52,13 @@ jobs:
           git -C "$OPENVOICE_SRC" checkout "$OPENVOICE_COMMIT"
       - name: Export the converter to ONNX and compute reference values
         run: python scripts/build_converter_pack.py && ls -la "$PACK_DIR"
-      - name: Verify the Kotlin code against PyTorch and run the full chain
-        run: ./gradlew -PjvmOnly=true :core:voiceconvert:test --tests 'ConverterIntegrationTest' --rerun -i | grep -E "RESULT|SKIP|FAILED|PASSED|BUILD|AssertionFailed|Exception" 
+      - name: Verify the Kotlin code against PyTorch and run the full chain (a failure here stops the publish)
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew -PjvmOnly=true :core:voiceconvert:test --tests 'ConverterIntegrationTest' --rerun -i | tee test.log | grep -E "RESULT|SKIP|FAILED|BUILD|AssertionFailed|Exception|e: "
+          # the checks must really have run, not been skipped
+          grep -q "RESULT parity spectrogram" test.log && grep -q "RESULT parity fingerprint" test.log && grep -q "RESULT chain" test.log
       - name: Hashes for the app catalog
         run: |
           cd "$PACK_DIR"
