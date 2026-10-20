@@ -42,6 +42,7 @@ dependencies {
     implementation(project(":core:audio"))
     implementation(project(":core:supertonic"))
     implementation(project(":core:voicestudio"))
+    implementation(project(":core:voiceconvert"))
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.23.1")
     implementation("org.json:json:20240303") { because("none: platform org.json is used at runtime") }
 

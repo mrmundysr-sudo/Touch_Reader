@@ -112,6 +112,30 @@ class VoicePacksTest {
         assertTrue(store.installed().isEmpty())
     }
 
+    @Test fun streamInstallVerifiesAndInstalls() {
+        val files = mapOf("a.bin" to noise(2000).toByteArray(), "b.json" to noise(300).toByteArray())
+        val pack = filePack("https://unused.test/", files)
+        val store = PackStore(tmp)
+        store.installFromStreams(pack, { f -> files[f.path.removePrefix("sub/")]?.inputStream() })
+        files.forEach { (n, b) -> assertContentEquals(b, File(store.get("multi")!!.dir, "sub/$n").readBytes()) }
+    }
+
+    @Test fun streamInstallRefusesDamagedOrMissingFiles() {
+        val files = mapOf("a.bin" to noise(2000).toByteArray(), "b.json" to noise(300).toByteArray())
+        val pack = filePack("https://unused.test/", files)
+        val store = PackStore(tmp)
+        val flipped = files["a.bin"]!!.copyOf().also { it[10] = (it[10] + 1).toByte() }
+        assertFailsWith<ChecksumMismatchException> { store.installFromStreams(pack, { f -> (if (f.path.endsWith("a.bin")) flipped else files["b.json"]!!).inputStream() }) }
+        assertFailsWith<java.io.IOException> { store.installFromStreams(pack, { f -> if (f.path.endsWith("a.bin")) files["a.bin"]!!.inputStream() else null }) }
+        assertTrue(store.installed().isEmpty()); assertFalse(File(tmp, "downloads/multi-1.files").exists())
+    }
+
+    @Test fun catalogParsesRequires() {
+        val json = """{"packs":[{"id":"addon","name":"A","engine":"e","license":"L","requires":["base"],
+          "files":[{"path":"a","url":"https://h/a","sizeBytes":1,"sha256":"${"a".repeat(64)}"}]}]}"""
+        assertEquals(listOf("base"), VoicePackCatalog.parse(json).packs.single().requires)
+    }
+
     @Test fun catalogParsesFileListAndSumsSizes() {
         val json = """{"packs":[{"id":"m","name":"M","engine":"supertonic","license":"OpenRAIL-M","requiresAcceptance":true,"notice":"n",
           "files":[{"path":"onnx/a.onnx","url":"https://h.test/a","sizeBytes":100,"sha256":"${"a".repeat(64)}"},

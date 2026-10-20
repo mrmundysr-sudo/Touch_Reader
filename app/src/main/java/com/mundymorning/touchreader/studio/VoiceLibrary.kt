@@ -27,4 +27,12 @@ class VoiceLibrary(context: Context) {
     suspend fun delete(id: String) { withContext(Dispatchers.IO) { store.delete(id) }; refresh() }
 
     fun sampleFile(id: String): File? = store.sampleFile(id)
+
+    /** Derived data (the voice fingerprint) for one engine version; safe to call from a worker thread. */
+    fun engineData(id: String, engine: String, version: String): ByteArray? = store.engineData(id, engine, version)
+
+    fun saveEngineData(id: String, engine: String, version: String, bytes: ByteArray) {
+        store.saveEngineData(id, engine, version, bytes)
+        refresh()
+    }
 }

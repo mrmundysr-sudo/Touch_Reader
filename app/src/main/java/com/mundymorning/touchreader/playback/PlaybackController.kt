@@ -58,6 +58,7 @@ class PlaybackController(
     private val store: DocumentStore,
     private val settings: Settings,
     private val packs: VoicePackManager,
+    private val voiceLibrary: com.mundymorning.touchreader.studio.VoiceLibrary,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -74,7 +75,7 @@ class PlaybackController(
         if (settings.ttsEngine.value == Engines.NEURAL) {
             val dir = packs.installedDir(Engines.NEURAL_PACK_ID)
             if (dir != null) {
-                return SupertonicAppEngine(app, dir, settings.neuralSteps.value).also { e ->
+                return SupertonicAppEngine(app, dir, settings.neuralSteps.value, packs.installedDir(Engines.CONVERTER_PACK_ID), voiceLibrary).also { e ->
                     e.onSlow = { scope.launch { _ui.update { it.copy(slowEngine = true) } } }
                 }
             }
@@ -244,6 +245,14 @@ class PlaybackController(
         _ui.update { it.copy(voiceName = name) }
         session?.restartCurrent()
         scope.launch(Dispatchers.IO) { db.documents().setVoice(id, name) }
+    }
+
+    /** Make a saved voice the narrator: switch to the neural engine (which hosts custom voices) and select it. */
+    fun useCustomVoice(profileId: String) {
+        val name = Engines.CUSTOM_PREFIX + profileId
+        settings.setDefaultVoice(name)
+        if (settings.ttsEngine.value != Engines.NEURAL) switchEngine(Engines.NEURAL)
+        if (_ui.value.docId != null) setVoice(name)
     }
 
     fun dismissSlowNotice() { _ui.update { it.copy(slowEngine = false) } }

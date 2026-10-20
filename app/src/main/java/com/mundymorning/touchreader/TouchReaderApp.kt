@@ -20,8 +20,8 @@ class AppContainer(app: Application) {
     val settings = Settings(app)
     val importer = ImportManager(app, db, store, settings)
     val voicePacks = VoicePackManager(app)
-    val controller = PlaybackController(app, db, store, settings, voicePacks)
     val voiceLibrary = VoiceLibrary(app)
+    val controller = PlaybackController(app, db, store, settings, voicePacks, voiceLibrary)
     val studio = VoiceStudioSession(app, voiceLibrary)
     val samplePlayer = SamplePlayer(app.cacheDir)
 }

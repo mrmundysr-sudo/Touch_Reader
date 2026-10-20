@@ -108,6 +108,10 @@ class PackStore(private val root: File) {
             }
             finished += f.sizeBytes
         }
+        finalizeInstall(pack, staging)
+    }
+
+    private fun finalizeInstall(pack: VoicePack, staging: File) {
         installedDir.mkdirs()
         val finalDir = File(installedDir, pack.id)
         finalDir.deleteRecursively()
@@ -117,6 +121,31 @@ class PackStore(private val root: File) {
                 .put("licenseUrl", pack.licenseUrl ?: JSONObject.NULL).put("installedAt", System.currentTimeMillis()).toString()
         )
         if (!staging.renameTo(finalDir)) throw IOException("Could not move the pack into place.")
+    }
+
+    /**
+     * Installs a file-list pack from local streams (files packaged inside a test build) instead of the network.
+     * Every file is checked against the same size and SHA-256 as a download, so a wrong or damaged bundle is refused.
+     */
+    fun installFromStreams(pack: VoicePack, open: (PackFile) -> java.io.InputStream?, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+        require(pack.isFileList) { "Not a file-list pack" }
+        val staging = stagingDir(pack).also { it.deleteRecursively(); it.mkdirs() }
+        var done = 0L
+        try {
+            for (f in pack.files) {
+                val dest = File(staging, f.path).also { it.parentFile?.mkdirs() }
+                val input = open(f) ?: throw IOException("The file ${f.path} is not included in this build.")
+                val md = java.security.MessageDigest.getInstance("SHA-256")
+                var size = 0L
+                input.use { i -> dest.outputStream().use { o ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) { val n = i.read(buf); if (n < 0) break; o.write(buf, 0, n); md.update(buf, 0, n); size += n; onProgress(done + size, pack.sizeBytes) }
+                } }
+                if (size != f.sizeBytes || md.digest().joinToString("") { "%02x".format(it) } != f.sha256) { staging.deleteRecursively(); throw ChecksumMismatchException() }
+                done += size
+            }
+            finalizeInstall(pack, staging)
+        } catch (e: Exception) { staging.deleteRecursively(); throw e }
     }
 
     /** Download (resumable), verify, install, then remove the archive. */

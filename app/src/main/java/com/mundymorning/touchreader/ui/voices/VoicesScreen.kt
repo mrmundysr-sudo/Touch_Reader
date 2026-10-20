@@ -51,6 +51,8 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
     val myVoices by container.voiceLibrary.profiles.collectAsState()
     val playingSample by container.samplePlayer.playingKey.collectAsState()
     var renameVoice by remember { mutableStateOf<VoiceProfile?>(null) }
+    var needsAddon by remember { mutableStateOf(false) }
+    val cloneReady = packStates[Engines.NEURAL_PACK_ID] is PackState.Installed && packStates[Engines.CONVERTER_PACK_ID] is PackState.Installed
     var deleteVoice by remember { mutableStateOf<VoiceProfile?>(null) }
     val voiceScope = rememberCoroutineScope()
     DisposableEffect(Unit) { onDispose { container.samplePlayer.stop() } }
@@ -105,7 +107,8 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                 item { Text("Nothing to download right now.", Modifier.padding(horizontal = 24.dp, vertical = 4.dp), style = MaterialTheme.typography.bodyMedium) }
             }
             items(container.voicePacks.catalog, key = { it.id }) { p ->
-                PackRow(p, packStates[p.id] ?: PackState.Available,
+                val missing = p.requires.filter { packStates[it] !is PackState.Installed }.mapNotNull { id -> container.voicePacks.catalog.firstOrNull { it.id == id }?.name }
+                PackRow(p, packStates[p.id] ?: PackState.Available, bundled = container.voicePacks.isBundled(p), missingRequirement = missing.firstOrNull(),
                     onDownload = { accepted = false; confirmPack = p }, onCancel = { container.voicePacks.cancel(p.id) },
                     onDelete = {
                         if (p.id == Engines.NEURAL_PACK_ID && chosenEngine == Engines.NEURAL) controller.switchEngine(null)
@@ -116,7 +119,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
             item {
                 SectionHeader(
                     "My voices",
-                    "Voices you create from your own recordings. They stay on this phone. Narrating a book in a custom voice needs a voice-cloning engine that is not available in this version, so for now you can record, check, save, play back and delete voices.",
+                    "Voices you create from your own recordings. They stay on this phone. To have a book read in one of your voices, install the neural voice and the voice cloning add-on above, then tap “Use to narrate”.",
                 )
             }
             item {
@@ -140,6 +143,10 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                             if (file != null) IconButton({ if (isPlaying) container.samplePlayer.stop() else container.samplePlayer.play(v.id, file) }) {
                                 Icon(if (isPlaying) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, if (isPlaying) "Stop" else "Play ${v.name}'s sample")
                             }
+                            if (default == Engines.CUSTOM_PREFIX + v.id) Icon(Icons.Rounded.Check, "Current narrator")
+                            else TextButton({
+                                if (cloneReady) container.controller.useCustomVoice(v.id) else needsAddon = true
+                            }) { Text("Use to narrate") }
                             IconButton({ renameVoice = v }) { Icon(Icons.Rounded.Edit, "Rename ${v.name}") }
                             IconButton({ deleteVoice = v }) { Icon(Icons.Rounded.Delete, "Delete ${v.name}") }
                         }
@@ -178,6 +185,15 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
         )
     }
 
+    if (needsAddon) {
+        AlertDialog(
+            onDismissRequest = { needsAddon = false },
+            title = { Text("Two downloads needed") },
+            text = { Text("To have books read in your own voice, install both items under “Downloaded offline voices” above: the neural voice (about 400 MB) and the voice cloning add-on (about 130 MB). Both run fully on your phone.") },
+            confirmButton = { TextButton({ needsAddon = false }) { Text("OK") } },
+        )
+    }
+
     renameVoice?.let { v ->
         var text by remember(v.id) { mutableStateOf(v.name) }
         AlertDialog(
@@ -209,10 +225,11 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
         val totalGb = remember { ctx.getSystemService(ActivityManager::class.java).let { am -> ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem / 1e9 } }
         AlertDialog(
             onDismissRequest = { confirmPack = null },
-            title = { Text("Download ${p.name}?") },
+            title = { Text(if (container.voicePacks.isBundled(p)) "Install ${p.name}?" else "Download ${p.name}?") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text("Downloads about ${p.sizeBytes / 1_000_000} MB directly from the model's publisher and stores it on your phone. It uses your data connection, so Wi-Fi is recommended.")
+                    if (container.voicePacks.isBundled(p)) Text("This test build already contains the files (${p.sizeBytes / 1_000_000} MB). Nothing is downloaded.")
+                    else Text("Downloads about ${p.sizeBytes / 1_000_000} MB directly from the publisher and stores it on your phone. It uses your data connection, so Wi-Fi is recommended.")
                     if (totalGb < 3.5) {
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -237,9 +254,10 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                     enabled = accepted || !p.requiresAcceptance,
                     onClick = {
                         if (p.requiresAcceptance) container.settings.recordAcceptance(p.id, p.version)
-                        container.voicePacks.download(p); confirmPack = null
+                        if (container.voicePacks.isBundled(p)) container.voicePacks.installBundled(p) else container.voicePacks.download(p)
+                        confirmPack = null
                     },
-                ) { Text("Download") }
+                ) { Text(if (container.voicePacks.isBundled(p)) "Install" else "Download") }
             },
             dismissButton = { TextButton({ confirmPack = null }) { Text("Cancel") } },
         )
@@ -273,12 +291,15 @@ private fun VoiceRow(v: VoiceInfo, default: String?, container: AppContainer) {
 }
 
 @Composable
-private fun PackRow(p: VoicePack, state: PackState, onDownload: () -> Unit, onCancel: () -> Unit, onDelete: () -> Unit) {
+private fun PackRow(p: VoicePack, state: PackState, bundled: Boolean, missingRequirement: String?, onDownload: () -> Unit, onCancel: () -> Unit, onDelete: () -> Unit) {
     ListItem(
         headlineContent = { Text(p.name) },
         supportingContent = {
             Column {
                 Text("${p.sizeBytes / 1_000_000} MB · ${p.license}${p.attribution?.let { " · $it" } ?: ""}")
+                if (p.description.isNotBlank()) Text(p.description, style = MaterialTheme.typography.bodySmall)
+                if (bundled && state !is PackState.Installed) Text("Included in this test build: no download needed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                if (missingRequirement != null && state !is PackState.Installed) Text("Install “$missingRequirement” first.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 when (state) {
                     is PackState.Downloading -> LinearProgressIndicator(progress = { (state.done.toFloat() / state.total).coerceIn(0f, 1f) }, Modifier.fillMaxWidth().padding(top = 4.dp))
                     is PackState.Installing -> Text("Installing…")
@@ -289,7 +310,7 @@ private fun PackRow(p: VoicePack, state: PackState, onDownload: () -> Unit, onCa
         },
         trailingContent = {
             when (state) {
-                is PackState.Available, is PackState.Failed -> TextButton(onDownload) { Text("Download") }
+                is PackState.Available, is PackState.Failed -> TextButton(onDownload, enabled = missingRequirement == null) { Text(if (bundled) "Install" else "Download") }
                 is PackState.Downloading -> TextButton(onCancel) { Text("Cancel") }
                 is PackState.Installing -> CircularProgressIndicator(Modifier.size(24.dp))
                 is PackState.Installed -> TextButton(onDelete) { Text("Delete") }

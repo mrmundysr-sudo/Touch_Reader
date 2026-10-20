@@ -10,10 +10,14 @@ on:
     paths:
       - ".github/workflows/converter-pack.yml"
       - "scripts/build_converter_pack.py"
-      - "core/voiceconvert/**"
 
 permissions:
   contents: write
+
+# Never two builds at once: each one deletes and recreates the release.
+concurrency:
+  group: converter-pack
+  cancel-in-progress: false
 
 jobs:
   build:

@@ -188,3 +188,26 @@ class ConvertingSynthesizerTest {
         assertEquals(44100, ConvertingSynthesizer(FakeBase(), FakeConverter(), presets).sampleRate)
     }
 }
+
+class LazyToneConverterTest {
+    private class Counting : ToneConverter, AutoCloseable {
+        override val sampleRate = 22050; var closed = false
+        override fun embed(audio: FloatArray) = floatArrayOf(1f)
+        override fun convert(audio: FloatArray, src: FloatArray, tgt: FloatArray, isCancelled: () -> Boolean) = audio
+        override fun close() { closed = true }
+    }
+
+    @Test fun loadsOnFirstUseOnlyAndClosesWhatItLoaded() {
+        var loads = 0; val inner = Counting()
+        val lazy = LazyToneConverter(22050) { loads++; inner }
+        assertEquals(22050, lazy.sampleRate); assertEquals(0, loads)
+        lazy.embed(FloatArray(1)); lazy.convert(FloatArray(1), floatArrayOf(), floatArrayOf()) { false }
+        assertEquals(1, loads); lazy.close(); assertTrue(inner.closed)
+    }
+
+    @Test fun closingWithoutUseLoadsNothing() {
+        var loads = 0
+        LazyToneConverter(22050) { loads++; Counting() }.close()
+        assertEquals(0, loads)
+    }
+}

@@ -35,6 +35,8 @@ data class VoicePack(
     /** Terms the user must accept before downloading (e.g. use restrictions that must be passed on). */
     val notice: String? = null,
     val requiresAcceptance: Boolean = false,
+    /** Ids of packs that must be installed first (e.g. an add-on that works on top of a voice). */
+    val requires: List<String> = emptyList(),
 ) {
     val isFileList get() = files.isNotEmpty()
 }
@@ -71,6 +73,7 @@ object VoicePackCatalog {
                 licenseUrl = o.optString("licenseUrl").ifEmpty { null }, attribution = o.optString("attribution").ifEmpty { null },
                 files = files, notice = o.optString("notice").ifEmpty { null },
                 requiresAcceptance = o.optBoolean("requiresAcceptance", false),
+                requires = o.optJSONArray("requires")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty(),
             )
         }
         return CatalogResult(packs, rejected)

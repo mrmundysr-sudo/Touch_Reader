@@ -35,6 +35,13 @@ class VoicePackManager(private val context: Context) {
 
     val catalog: List<VoicePack> = parsed.packs
 
+    private fun assetExists(path: String) = try { context.assets.open(path).close(); true } catch (e: Exception) { false }
+
+    /** Packs whose files were packaged inside this (test) build, so they can be installed without a download. */
+    private val bundledIds: Set<String> = catalog.filter { p -> p.isFileList && p.files.all { assetExists("bundled/${p.id}/${it.path}") } }.map { it.id }.toSet()
+
+    fun isBundled(pack: VoicePack) = pack.id in bundledIds
+
     private val _states = MutableStateFlow(
         catalog.associate { p ->
             p.id to (if (store.get(p.id) != null) PackState.Installed(store.sizeOnDisk(p.id)) else PackState.Available)
@@ -62,7 +69,27 @@ class VoicePackManager(private val context: Context) {
             } catch (e: ChecksumMismatchException) {
                 set(pack.id, PackState.Failed("The download was corrupt and has been discarded. Try again."))
             } catch (e: Exception) {
-                set(pack.id, PackState.Failed("Download failed: ${e.message ?: e.javaClass.simpleName}"))
+                val m = e.message.orEmpty()
+                set(pack.id, PackState.Failed(
+                    if (m.contains("HTTP 404") || m.contains("HTTP 403")) "This download is not available yet (the server answered \"$m\")."
+                    else "Download failed: ${m.ifEmpty { e.javaClass.simpleName }}"
+                ))
+            }
+        }
+    }
+
+    /** Installs a pack from files bundled in this build (every file is checked against the catalog hashes). */
+    fun installBundled(pack: VoicePack) {
+        if (!isBundled(pack) || jobs[pack.id]?.isActive == true) return
+        jobs[pack.id] = scope.launch {
+            set(pack.id, PackState.Installing)
+            try {
+                store.installFromStreams(pack, { f -> try { context.assets.open("bundled/${pack.id}/${f.path}") } catch (e: Exception) { null } })
+                set(pack.id, PackState.Installed(store.sizeOnDisk(pack.id)))
+            } catch (e: ChecksumMismatchException) {
+                set(pack.id, PackState.Failed("The files in this build do not match the expected version, so they were not installed."))
+            } catch (e: Exception) {
+                set(pack.id, PackState.Failed("Install failed: ${e.message ?: e.javaClass.simpleName}"))
             }
         }
     }
