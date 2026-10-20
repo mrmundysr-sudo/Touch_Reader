@@ -44,7 +44,7 @@ ran slower than real time even on an emulator. Per the owner's decision (option 
 Open risks for the neural voice: 401 MB download and a large memory footprint (may not start on 2–3 GB phones, then the app falls back to the system voice);
 speed on real phone CPUs is unmeasured; upstream is archived; first sentence waits for the model to load; no per-document language detection (uses the phone's language, else language-agnostic mode).
 
-## Phase 3 — Voice Studio (recording, import, cleanup, profiles; **no cloning engine yet**)
+## Phase 3 — Voice Studio (recording, import, cleanup, profiles)
 
 | Item | State | Evidence |
 |---|---|---|
@@ -55,8 +55,7 @@ speed on real phone CPUs is unmeasured; upstream is archived; first sentence wai
 | Import MP3 / WAV / M4A (phone decoders via MediaCodec; WAV parsed directly) | **Built**, never run | needs real files |
 | Voice Studio screen, "My voices" list (play sample, rename, delete with confirmation), ownership checkbox "I confirm that I own this recording or have permission to use the voice." | **Built**, never run | – |
 
-Not done in Phase 3: **any voice cloning / narrating with a custom voice**, "set default narrator" and "change voice while reading" for custom voices (nothing to select until an engine exists), an audio denoiser, detection of multiple speakers or music (the report says it cannot tell).
-Candidate engine: OpenVoice V2 converter after Supertonic (see `RESEARCH.md`); needs a listening check, real-recording tests and on-phone measurements first.
+Not done in Phase 3: an audio denoiser; detection of multiple speakers or music (the report says it cannot tell); picking a custom voice as default for individual documents beyond the Voices tab / reader voice sheet. Narrating with a custom voice is Phase 3b below.
 Privacy: recordings stay in private app storage (backup is disabled), are never uploaded; `RECORD_AUDIO` is requested only when the user taps Record. Play Store data-safety/privacy-policy wording still has to be written (Phase 5).
 
 ## Phase 3b — Narrating with your own voice (OpenVoice converter after Supertonic)
@@ -69,9 +68,8 @@ Privacy: recordings stay in private app storage (backup is disabled), are never 
 | Engine: custom voices listed as narrators, fingerprint cached per saved voice, nearest built-in base voice chosen automatically, converter loaded lazily, falls back to a built-in voice if a saved voice is gone | **Built**, never run on a phone | 22 voiceconvert tests cover routing with fakes |
 | Voices tab: "Use to narrate", add-on pack with "install the neural voice first" and acceptance text | **Built**, never run | – |
 
-**Hosting blocker (owner decision):** the repository is private, so the app cannot download `converter-v1` from its releases (anonymous request returns 404, checked in CI).
-Options: make the repo (or a small separate repo) public, host the files elsewhere public, or keep bundling the files in test builds (`bundle_converter` workflow input; adds ~130 MB to the APK, hashes verified at build time and again at install).
-Test builds published with the converter bundled can be used now; a public/Play release cannot rely on this.
+**Hosting (resolved):** the repository is now public. The `check-public-download` workflow confirmed without signing in that all 17 Supertonic files answer from Hugging Face and all 6 converter files download and match their pinned SHA-256 (22 files, 0 problems).
+Test builds can still bundle the converter (`bundle_converter` workflow input, +130 MB) to avoid the download; normal builds download it over the network.
 
 Unproven until someone listens/measures on a phone: how it sounds with a real voice and a real phone microphone, speed and memory on phone CPUs with both models loaded, behaviour with noisy recordings. The first sentence with a custom voice also waits for fingerprint extraction (a few seconds, then cached).
 Limits that will not go away: it changes timbre only (accent, rhythm and wording style are the base voice's); every output is machine-generated speech and the neural voice's licence requires it to be labelled as such when shared.
@@ -79,7 +77,7 @@ Limits that will not go away: it changes timbre only (accent, rhythm and wording
 ## Not built
 
 - Kokoro and Piper (ruled out for now; see RESEARCH.md)
-- (Cloning: see Phase 3b above. Chatterbox-Nano was rejected for phones.) Chatterbox-Nano **was probed and is not realistic on inexpensive phones** (1.9 GB model, 4.5 GB RAM, slower than real time on CPU) — see `RESEARCH.md`. **OpenVoice V2 tone-colour converter on top of Supertonic** was then probed and looks plausible (128 MB ONNX, real-time factor 0.66 on 2 CPU cores, 1 KB voice profile) but is unlistened, untested with real recordings and unmeasured on a phone. No cloning engine is integrated.
+- Chatterbox-Nano cloning was probed and rejected for phones (1.9 GB model, 4.5 GB RAM, slower than real time on CPU); see `RESEARCH.md`.
 - Audiobook export, MP3/M4B (Phase 4)
 - OCR; DOC/RTF/ODT/MOBI/FB2
 - Performance, battery and low-memory measurements (none taken)
