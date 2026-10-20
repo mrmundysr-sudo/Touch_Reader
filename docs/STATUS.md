@@ -1,4 +1,4 @@
-# Touch Reader — Status (through Phase 3, partial)
+# Touch Reader — Status (through Phase 3)
 
 Legend: **Verified** = exercised by an automated test that ran. **Built** = compiles in CI but never run
 on a device or emulator. **Not built** = does not exist.
@@ -59,10 +59,27 @@ Not done in Phase 3: **any voice cloning / narrating with a custom voice**, "set
 Candidate engine: OpenVoice V2 converter after Supertonic (see `RESEARCH.md`); needs a listening check, real-recording tests and on-phone measurements first.
 Privacy: recordings stay in private app storage (backup is disabled), are never uploaded; `RECORD_AUDIO` is requested only when the user taps Record. Play Store data-safety/privacy-policy wording still has to be written (Phase 5).
 
+## Phase 3b — Narrating with your own voice (OpenVoice converter after Supertonic)
+
+| Item | State | Evidence |
+|---|---|---|
+| Kotlin audio front-end (FFT, spectrogram) vs PyTorch on the real model | **Verified in CI**: spectrogram max diff 0.000004, voice fingerprint max diff 0.000006 (cosine 1.0) | converter-pack workflow, gated: it only publishes if these pass |
+| Full chain Supertonic -> converter, forcing male base -> female target (synthetic voices) | **Verified in CI**: similarity to target 0.81–0.83 vs 0.23–0.31 to source; speed 0.37× and 0.86× real time in two runs on a 2-core CI machine | same |
+| Converter pack (ONNX, 128 MB + 3 MB; MIT + notice), built reproducibly (identical hashes across two runs) and pinned in the app catalog | **Verified** (hash-checked); published as release `converter-v1` | 23 catalog/pack tests |
+| Engine: custom voices listed as narrators, fingerprint cached per saved voice, nearest built-in base voice chosen automatically, converter loaded lazily, falls back to a built-in voice if a saved voice is gone | **Built**, never run on a phone | 22 voiceconvert tests cover routing with fakes |
+| Voices tab: "Use to narrate", add-on pack with "install the neural voice first" and acceptance text | **Built**, never run | – |
+
+**Hosting blocker (owner decision):** the repository is private, so the app cannot download `converter-v1` from its releases (anonymous request returns 404, checked in CI).
+Options: make the repo (or a small separate repo) public, host the files elsewhere public, or keep bundling the files in test builds (`bundle_converter` workflow input; adds ~130 MB to the APK, hashes verified at build time and again at install).
+Test builds published with the converter bundled can be used now; a public/Play release cannot rely on this.
+
+Unproven until someone listens/measures on a phone: how it sounds with a real voice and a real phone microphone, speed and memory on phone CPUs with both models loaded, behaviour with noisy recordings. The first sentence with a custom voice also waits for fingerprint extraction (a few seconds, then cached).
+Limits that will not go away: it changes timbre only (accent, rhythm and wording style are the base voice's); every output is machine-generated speech and the neural voice's licence requires it to be labelled as such when shared.
+
 ## Not built
 
 - Kokoro and Piper (ruled out for now; see RESEARCH.md)
-- Any voice cloning engine (see above). Chatterbox-Nano **was probed and is not realistic on inexpensive phones** (1.9 GB model, 4.5 GB RAM, slower than real time on CPU) — see `RESEARCH.md`. **OpenVoice V2 tone-colour converter on top of Supertonic** was then probed and looks plausible (128 MB ONNX, real-time factor 0.66 on 2 CPU cores, 1 KB voice profile) but is unlistened, untested with real recordings and unmeasured on a phone. No cloning engine is integrated.
+- (Cloning: see Phase 3b above. Chatterbox-Nano was rejected for phones.) Chatterbox-Nano **was probed and is not realistic on inexpensive phones** (1.9 GB model, 4.5 GB RAM, slower than real time on CPU) — see `RESEARCH.md`. **OpenVoice V2 tone-colour converter on top of Supertonic** was then probed and looks plausible (128 MB ONNX, real-time factor 0.66 on 2 CPU cores, 1 KB voice profile) but is unlistened, untested with real recordings and unmeasured on a phone. No cloning engine is integrated.
 - Audiobook export, MP3/M4B (Phase 4)
 - OCR; DOC/RTF/ODT/MOBI/FB2
 - Performance, battery and low-memory measurements (none taken)

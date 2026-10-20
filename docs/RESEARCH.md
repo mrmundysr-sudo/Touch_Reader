@@ -124,6 +124,12 @@ Method: pinned OpenVoice commit `74a1d14`, HF weights `myshell-ai/OpenVoiceV2` @
 Weights are MIT, so a converted ONNX may be redistributed with the MIT notice.
 The converter changes timbre only: it will not copy accent or speaking style, and it adds no consent check, so the in-app acknowledgement and OpenRAIL-M rule against impersonation without consent still apply.
 
+## Phase 3b result: OpenVoice converter integrated and verified in CI
+
+Following the probe, the converter was exported to ONNX (`scripts/build_converter_pack.py`), the Kotlin front-end was written (`core/voiceconvert`), and CI checks it against PyTorch's real outputs before publishing `converter-v1`:
+spectrogram max difference 4e-6, fingerprint 6e-6 (cosine 1.0); full chain similarity to target 0.81 (source 0.31); real-time factor 0.37–0.86 across two CI runs (2 vCPUs, noisy).
+The export is byte-reproducible (same ONNX hashes on two runs). Anonymous download of the release returns 404 because the repository is private (see STATUS.md).
+
 ## Sources
 - Chatterbox repo: https://github.com/resemble-ai/chatterbox
 - Chatterbox ONNX exports: https://huggingface.co/onnx-community/chatterbox-ONNX , https://huggingface.co/ResembleAI/chatterbox-turbo-ONNX
