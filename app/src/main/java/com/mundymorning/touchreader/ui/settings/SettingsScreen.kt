@@ -64,7 +64,7 @@ fun SettingsScreen(container: AppContainer) {
                 Text("Touch Reader 0.1.0 — Mundy Morning Studios", style = MaterialTheme.typography.bodyMedium)
                 Text("Always Professional. Always Free.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(12.dp))
-                Text("Everything works offline. Your documents never leave this phone.", style = MaterialTheme.typography.bodyMedium)
+                Text("Everything works offline. Your documents and voice recordings never leave this phone, and Touch Reader has no accounts or servers. Voice recordings and saved voices are stored privately and can be deleted from the Voices tab.", style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(12.dp))
                 Text("Open-source components", style = MaterialTheme.typography.titleSmall)
                 Text(

@@ -7,6 +7,9 @@ import com.mundymorning.touchreader.data.DocumentStore
 import com.mundymorning.touchreader.data.Settings
 import com.mundymorning.touchreader.importer.ImportManager
 import com.mundymorning.touchreader.playback.PlaybackController
+import com.mundymorning.touchreader.studio.SamplePlayer
+import com.mundymorning.touchreader.studio.VoiceLibrary
+import com.mundymorning.touchreader.studio.VoiceStudioSession
 import com.mundymorning.touchreader.voices.VoicePackManager
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
@@ -18,6 +21,9 @@ class AppContainer(app: Application) {
     val importer = ImportManager(app, db, store, settings)
     val voicePacks = VoicePackManager(app)
     val controller = PlaybackController(app, db, store, settings, voicePacks)
+    val voiceLibrary = VoiceLibrary(app)
+    val studio = VoiceStudioSession(app, voiceLibrary)
+    val samplePlayer = SamplePlayer(app.cacheDir)
 }
 
 class TouchReaderApp : Application() {

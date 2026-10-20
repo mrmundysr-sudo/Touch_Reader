@@ -23,6 +23,7 @@ import com.mundymorning.touchreader.data.ThemeMode
 import com.mundymorning.touchreader.ui.library.LibraryScreen
 import com.mundymorning.touchreader.ui.reader.ReaderScreen
 import com.mundymorning.touchreader.ui.settings.SettingsScreen
+import com.mundymorning.touchreader.ui.studio.VoiceStudioScreen
 import com.mundymorning.touchreader.ui.theme.TouchReaderTheme
 import com.mundymorning.touchreader.ui.voices.VoicesScreen
 
@@ -91,7 +92,8 @@ private fun AppRoot(container: AppContainer, pendingDoc: Long, consumed: () -> U
             composable("library") {
                 LibraryScreen(container) { id, play -> nav.navigate("reader/$id?play=$play") }
             }
-            composable("voices") { VoicesScreen(container) }
+            composable("voices") { VoicesScreen(container, onCreateVoice = { nav.navigate("studio") }) }
+            composable("studio") { VoiceStudioScreen(container, onClose = { nav.popBackStack() }) }
             composable("settings") { SettingsScreen(container) }
             composable(
                 "reader/{id}?play={play}",

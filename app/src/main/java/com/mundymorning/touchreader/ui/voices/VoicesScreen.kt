@@ -11,6 +11,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,6 +26,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mundymorning.touchreader.AppContainer
 import com.mundymorning.touchreader.core.voicepacks.VoicePack
+import com.mundymorning.touchreader.core.voicestudio.VoiceProfile
+import com.mundymorning.touchreader.core.voicestudio.Verdict
+import kotlinx.coroutines.launch
 import com.mundymorning.touchreader.tts.EngineStatus
 import com.mundymorning.touchreader.tts.Engines
 import com.mundymorning.touchreader.tts.VoiceInfo
@@ -29,7 +37,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VoicesScreen(container: AppContainer) {
+fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
     val controller = container.controller
     val voices by controller.voices.collectAsState(initial = emptyList())
     val status by controller.engineStatus.collectAsState(initial = EngineStatus.Initializing)
@@ -40,6 +48,12 @@ fun VoicesScreen(container: AppContainer) {
     var allLanguages by remember { mutableStateOf(false) }
     var pickEngine by remember { mutableStateOf(false) }
     var confirmPack by remember { mutableStateOf<VoicePack?>(null) }
+    val myVoices by container.voiceLibrary.profiles.collectAsState()
+    val playingSample by container.samplePlayer.playingKey.collectAsState()
+    var renameVoice by remember { mutableStateOf<VoiceProfile?>(null) }
+    var deleteVoice by remember { mutableStateOf<VoiceProfile?>(null) }
+    val voiceScope = rememberCoroutineScope()
+    DisposableEffect(Unit) { onDispose { container.samplePlayer.stop() } }
     var accepted by remember { mutableStateOf(false) }
     val neuralInstalled = packStates[Engines.NEURAL_PACK_ID] is PackState.Installed
     val lang = Locale.getDefault().language
@@ -99,7 +113,39 @@ fun VoicesScreen(container: AppContainer) {
                     })
             }
             item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
-            item { SectionHeader("My voices", "Creating your own narrator from a recording (Voice Studio) is planned. It is not available in this version.") }
+            item {
+                SectionHeader(
+                    "My voices",
+                    "Voices you create from your own recordings. They stay on this phone. Narrating a book in a custom voice needs a voice-cloning engine that is not available in this version, so for now you can record, check, save, play back and delete voices.",
+                )
+            }
+            item {
+                FilledTonalButton(onClick = onCreateVoice, modifier = Modifier.padding(horizontal = 24.dp).heightIn(min = 48.dp)) {
+                    Icon(Icons.Rounded.Mic, null); Spacer(Modifier.width(8.dp)); Text("Create a voice")
+                }
+            }
+            items(myVoices, key = { it.id }) { v ->
+                ListItem(
+                    headlineContent = { Text(v.name) },
+                    supportingContent = {
+                        Text(
+                            "Saved " + android.text.format.DateUtils.getRelativeTimeSpanString(v.createdAt, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS) +
+                                " · " + when (v.qualityVerdict) { Verdict.GOOD -> "good sample"; Verdict.USABLE -> "usable sample"; Verdict.POOR -> "weak sample" }
+                        )
+                    },
+                    trailingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val file = container.voiceLibrary.sampleFile(v.id)
+                            val isPlaying = playingSample == v.id
+                            if (file != null) IconButton({ if (isPlaying) container.samplePlayer.stop() else container.samplePlayer.play(v.id, file) }) {
+                                Icon(if (isPlaying) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, if (isPlaying) "Stop" else "Play ${v.name}'s sample")
+                            }
+                            IconButton({ renameVoice = v }) { Icon(Icons.Rounded.Edit, "Rename ${v.name}") }
+                            IconButton({ deleteVoice = v }) { Icon(Icons.Rounded.Delete, "Delete ${v.name}") }
+                        }
+                    },
+                )
+            }
         }
     }
 
@@ -129,6 +175,32 @@ fun VoicesScreen(container: AppContainer) {
                 }
             },
             confirmButton = { TextButton({ pickEngine = false }) { Text("Close") } },
+        )
+    }
+
+    renameVoice?.let { v ->
+        var text by remember(v.id) { mutableStateOf(v.name) }
+        AlertDialog(
+            onDismissRequest = { renameVoice = null },
+            title = { Text("Rename voice") },
+            text = { OutlinedTextField(text, { text = it.take(60) }, singleLine = true) },
+            confirmButton = { TextButton({ voiceScope.launch { container.voiceLibrary.rename(v.id, text) }; renameVoice = null }) { Text("Save") } },
+            dismissButton = { TextButton({ renameVoice = null }) { Text("Cancel") } },
+        )
+    }
+    deleteVoice?.let { v ->
+        AlertDialog(
+            onDismissRequest = { deleteVoice = null },
+            title = { Text("Delete ${v.name}?") },
+            text = { Text("This permanently deletes the recording and the voice from this phone. It cannot be undone.") },
+            confirmButton = {
+                TextButton({
+                    container.samplePlayer.stop()
+                    voiceScope.launch { container.voiceLibrary.delete(v.id) }
+                    deleteVoice = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton({ deleteVoice = null }) { Text("Keep") } },
         )
     }
 
