@@ -59,6 +59,17 @@ class VoiceStudioTest {
         assertTrue(abs(crossings - 833) <= 3, "crossings $crossings")
     }
 
+    @Test fun fastResamplerMatchesReferenceImplementation() {
+        val rnd = Random(7)
+        val x = FloatArray(30000) { (rnd.nextGaussian() * 0.2).toFloat() }
+        for ((from, to) in listOf(44100 to 22050, 22050 to 44100, 44100 to 24000, 48000 to 16000, 16000 to 24000, 24000 to 22050)) {
+            val fast = Dsp.resample(Pcm(from, x), to); val ref = Dsp.resampleDirect(Pcm(from, x), to)
+            assertEquals(ref.samples.size, fast.samples.size, "$from->$to length")
+            val worst = fast.samples.indices.maxOf { abs(fast.samples[it] - ref.samples[it]) }
+            assertTrue(worst < 1e-4f, "$from->$to differs by $worst")
+        }
+    }
+
     @Test fun resampleAttenuatesAboveNewNyquist() {
         val a = Pcm(48000, FloatArray(48000) { sin(2 * PI * 20000 * it / 48000).toFloat() * 0.5f })
         val b = Dsp.resample(a, 16000)

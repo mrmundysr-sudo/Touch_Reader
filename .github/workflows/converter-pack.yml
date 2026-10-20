@@ -1,0 +1,81 @@
+name: Build voice-cloning converter pack
+
+# Builds the OpenVoice V2 converter add-on (ONNX), proves in CI that the Kotlin code reproduces PyTorch's numbers and that the whole
+# chain (Supertonic -> converter) moves timbre, and only then publishes the files as release "converter-v1" for the app to download.
+# Reference voices are synthetic Supertonic presets; no real person's voice is used.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - ".github/workflows/converter-pack.yml"
+      - "scripts/build_converter_pack.py"
+      - "core/voiceconvert/**"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      SUPERTONIC_DIR: ${{ github.workspace }}/.supertonic
+      REF_DIR: ${{ github.workspace }}/refs
+      PACK_DIR: ${{ github.workspace }}/pack
+      PROBE_OUT: ${{ github.workspace }}/probe-out
+      CONVERTER_DIR: ${{ github.workspace }}/pack
+      OPENVOICE_SRC: ${{ github.workspace }}/openvoice-src
+      OPENVOICE_COMMIT: 74a1d147b17a8c3092dd5430504bd83ef6c7eb23
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Fetch Supertonic and make synthetic reference voices (all ten presets)
+        run: |
+          ./scripts/probe-supertonic.sh > /dev/null
+          SUPERTONIC_REF_OUT="$REF_DIR" SUPERTONIC_REF_VOICES="M1,M2,M3,M4,M5,F1,F2,F3,F4,F5" ./gradlew -PjvmOnly=true :core:supertonic:test --tests '*writeSyntheticReferenceClips' --rerun -i | grep -E "WROTE|FAILED|BUILD"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies and fetch OpenVoice source (pinned commit)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy librosa soundfile scipy huggingface_hub onnx onnxruntime
+          git clone https://github.com/myshell-ai/OpenVoice.git "$OPENVOICE_SRC"
+          git -C "$OPENVOICE_SRC" checkout "$OPENVOICE_COMMIT"
+      - name: Export the converter to ONNX and compute reference values
+        run: python scripts/build_converter_pack.py && ls -la "$PACK_DIR"
+      - name: Verify the Kotlin code against PyTorch and run the full chain
+        run: ./gradlew -PjvmOnly=true :core:voiceconvert:test --tests 'ConverterIntegrationTest' --rerun -i | grep -E "RESULT|SKIP|FAILED|PASSED|BUILD|AssertionFailed|Exception" 
+      - name: Hashes for the app catalog
+        run: |
+          cd "$PACK_DIR"
+          for f in vc.onnx se.onnx source_embeddings.json converter_config.json LICENSE.txt NOTICE.txt; do
+            echo "CATALOG_FILE path=$f size=$(stat -c %s $f) sha256=$(sha256sum $f | cut -d' ' -f1)"
+          done
+      - name: Publish release converter-v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$PACK_DIR"
+          gh release delete converter-v1 -y --cleanup-tag 2>/dev/null || true
+          gh release create converter-v1 vc.onnx se.onnx source_embeddings.json converter_config.json LICENSE.txt NOTICE.txt \
+            --title "Voice-cloning converter pack v1" \
+            --notes "OpenVoice V2 tone-colour converter converted to ONNX (MIT, see LICENSE.txt and NOTICE.txt). Downloaded by the Touch Reader app on request; not for manual use."
+      - name: Can the app download it without signing in?
+        run: |
+          for f in vc.onnx se.onnx NOTICE.txt; do
+            echo "ANON_CHECK $f -> $(curl -s -o /dev/null -L -w '%{http_code}' https://github.com/${{ github.repository }}/releases/download/converter-v1/$f)"
+          done
+      - name: Publish chain sample (synthetic voices only)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f "$PROBE_OUT/chain_M1_to_F1.wav" ] && gh release create "converter-chain-sample-${{ github.run_number }}" "$PROBE_OUT/chain_M1_to_F1.wav" --prerelease \
+            --title "Converter chain sample #${{ github.run_number }}" --notes "Synthetic Supertonic male voice (M1) converted towards synthetic female voice (F1) by the Kotlin pipeline. Test sample, not part of the app." || echo "no sample"

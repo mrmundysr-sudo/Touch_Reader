@@ -65,7 +65,7 @@ class SupertonicModelTest {
         val text = "On a quiet morning the village woke slowly, and the baker lit his oven while the children ran down to the river. " +
             "By noon the market was full of voices, bright fruit and the smell of warm bread drifting across the square."
         val model = SupertonicModel.load(File(dir, "onnx"), threads = 2)
-        for (v in listOf("M1", "F1")) {
+        for (v in (System.getenv("SUPERTONIC_REF_VOICES")?.split(",") ?: listOf("M1", "F1"))) {
             val synth = SupertonicSynthesizer(model, VoiceStyle.parse(File(dir, "voice_styles/$v.json").readText()), "en", totalSteps = 8)
             val pcm = synth.synthesize(text, 1.0f) { false }
             val bytes = java.io.ByteArrayOutputStream()

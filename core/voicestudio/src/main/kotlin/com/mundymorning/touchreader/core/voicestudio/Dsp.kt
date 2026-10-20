@@ -17,8 +17,54 @@ object Dsp {
 
     fun db(x: Double) = 20.0 * log10(x + 1e-9)
 
-    /** Windowed-sinc resampler (low-passes when reducing the rate). */
+    /**
+     * Windowed-sinc resampler (low-passes when reducing the rate). Kernel weights are computed once per output
+     * phase (the ratio is rational), so each output sample is a plain dot product: no trigonometry in the inner loop.
+     */
     fun resample(pcm: Pcm, targetRate: Int): Pcm {
+        if (pcm.sampleRate == targetRate || pcm.samples.isEmpty()) return Pcm(targetRate, pcm.samples)
+        val g = gcd(pcm.sampleRate, targetRate)
+        val inStep = pcm.sampleRate / g          // input samples consumed per cycle of `phases` outputs
+        val phases = targetRate / g
+        if (phases > 4096) return resampleDirect(pcm, targetRate)
+        val ratio = pcm.sampleRate.toDouble() / targetRate
+        val cutoff = min(1.0, targetRate.toDouble() / pcm.sampleRate)
+        val half = (16.0 / cutoff).toInt()
+        val taps = 2 * half
+        // weights[phase][j] applies to input sample (base + j - half + 1), where base = floor(t)
+        val weights = Array(phases) { ph ->
+            val t = ph * ratio
+            val frac = t - floor(t)
+            FloatArray(taps) { j ->
+                val d = frac - (j - half + 1)
+                val kern = if (abs(d) < 1e-9) cutoff else sin(PI * d * cutoff) / (PI * d)
+                (kern * (0.5 + 0.5 * kotlin.math.cos(PI * d / half))).toFloat()
+            }
+        }
+        val x = pcm.samples
+        val n = (x.size / ratio).toInt()
+        val out = FloatArray(n)
+        for (i in 0 until n) {
+            val cycle = i / phases
+            val ph = i % phases
+            val base = cycle * inStep + floor(ph * ratio).toInt()
+            val w = weights[ph]
+            val first = base - half + 1
+            var acc = 0f
+            if (first >= 0 && first + taps <= x.size) {
+                for (j in 0 until taps) acc += x[first + j] * w[j]
+            } else {
+                for (j in 0 until taps) { val k = first + j; if (k >= 0 && k < x.size) acc += x[k] * w[j] }
+            }
+            out[i] = acc
+        }
+        return Pcm(targetRate, out)
+    }
+
+    private fun gcd(a: Int, b: Int): Int { var x = a; var y = b; while (y != 0) { val t = x % y; x = y; y = t }; return x }
+
+    /** Straightforward (slow) version, kept as the reference the fast path is tested against and as a fallback. */
+    internal fun resampleDirect(pcm: Pcm, targetRate: Int): Pcm {
         if (pcm.sampleRate == targetRate || pcm.samples.isEmpty()) return Pcm(targetRate, pcm.samples)
         val ratio = pcm.sampleRate.toDouble() / targetRate
         val cutoff = min(1.0, targetRate.toDouble() / pcm.sampleRate)

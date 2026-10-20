@@ -174,16 +174,22 @@ class SupertonicSynthesizer(
     override val sampleRate: Int get() = model.config.sampleRate
 
     override fun synthesize(text: String, speed: Float, isCancelled: () -> Boolean): ShortArray {
+        val wav = synthesizeFloat(text, speed, isCancelled) ?: return ShortArray(0)
+        return ShortArray(wav.size) { (wav[it] * 32767f).coerceIn(-32768f, 32767f).toInt().toShort() }
+    }
+
+    /** Mono float audio at [sampleRate], or null if cancelled. Used directly by stages that post-process the voice. */
+    fun synthesizeFloat(text: String, speed: Float, isCancelled: () -> Boolean): FloatArray? {
         val parts = ArrayList<FloatArray>()
         for ((i, chunk) in SupertonicText.chunk(text, SupertonicText.maxChunkFor(lang)).withIndex()) {
-            if (isCancelled()) return ShortArray(0)
-            val wav = model.infer(chunk, lang, style, speed, totalSteps, isCancelled) ?: return ShortArray(0)
+            if (isCancelled()) return null
+            val wav = model.infer(chunk, lang, style, speed, totalSteps, isCancelled) ?: return null
             if (i > 0) parts += FloatArray((chunkSilenceSec * sampleRate).toInt())
             parts += wav
         }
-        val out = ShortArray(parts.sumOf { it.size })
+        val out = FloatArray(parts.sumOf { it.size })
         var o = 0
-        for (p in parts) for (s in p) out[o++] = (s * 32767f).coerceIn(-32768f, 32767f).toInt().toShort()
+        for (p in parts) { p.copyInto(out, o); o += p.size }
         return out
     }
 

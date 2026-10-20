@@ -22,7 +22,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "TouchReader"
 
-include(":core:document", ":core:reader", ":core:tts", ":core:audio", ":core:voicepacks", ":core:supertonic", ":core:voicestudio")
+include(":core:document", ":core:reader", ":core:tts", ":core:audio", ":core:voicepacks", ":core:supertonic", ":core:voicestudio", ":core:voiceconvert")
 // The Android app needs the Android SDK. `-PjvmOnly=true` lets the pure-Kotlin
 // core modules be built and tested on machines without it.
 if (providers.gradleProperty("jvmOnly").orNull != "true") {
