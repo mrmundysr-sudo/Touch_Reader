@@ -47,7 +47,7 @@ speed on real phone CPUs is unmeasured; upstream is archived; first sentence wai
 ## Not built
 
 - Kokoro and Piper (ruled out for now; see RESEARCH.md)
-- Voice Studio, recording/import, any cloning (Phase 3). See `RESEARCH.md`: offline cloning is **not validated** on phone hardware.
+- Voice Studio, recording/import, any cloning (Phase 3). Chatterbox-Nano **was probed and is not realistic on inexpensive phones** (1.9 GB model, 4.5 GB RAM, slower than real time on CPU) — see `RESEARCH.md`. No cloning engine is selected.
 - Audiobook export, MP3/M4B (Phase 4)
 - OCR; DOC/RTF/ODT/MOBI/FB2
 - Performance, battery and low-memory measurements (none taken)

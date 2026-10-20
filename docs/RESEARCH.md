@@ -75,9 +75,35 @@ Everything below was checked from primary sources or measured in CI unless marke
 - **Speed (x86 CI runner, 2 threads, 5.6 s sentence pair):** real-time factor 0.52–0.55 at 8 steps, **0.29 at 4 steps**; model load 1.0–1.3 s; peak process memory ≈ 580–620 MB (includes JVM overhead). Upstream claims RTF 0.3 on an Android e-reader (unverified). **Not measured on any phone.**
 - **No voice cloning:** voices are 10 presets (M1–M5, F1–F5); the hosted Voice Builder that made new styles has shut down. Supertonic does not help with the cloning requirement.
 
+## Phase 3 probe: Chatterbox-Nano voice cloning on a plain CPU (CI run, Oct 2026)
+
+Method: pinned commit `5de7a54`, official PyTorch weights, CPU-only torch 2.6, GitHub runner with **2 vCPUs**; reference voices were synthetic
+(Supertonic M1/F1, 14.5 s each) so no real person was cloned. Listening samples: pre-release `probe-chatterbox-1` (`clone_M1.wav`, `clone_F1.wav` and the two references).
+
+| Question | Result |
+|---|---|
+| Does it clone from a reference clip? | **Yes.** Voice-encoder cosine similarity: clone of M1 vs M1 reference 0.92, vs F1 reference 0.62; clone of F1 vs F1 0.94, vs M1 0.68 (the two references are 0.64 apart). Measured with Chatterbox's own encoder (biased); **nobody has listened yet** |
+| Reference needed | >5 s; only the **first ~10–15 s** are used, so a 30–60 s recording adds nothing |
+| Saved voice profile | **170 KB** (`Conditionals.save`), reloads and generates without the clip. Computing it takes ~2.3–2.8 s |
+| Licence | Repo MIT; model card `license: mit`, not gated. Every output carries the Perth watermark (cost: 0.08 s per 8 s clip) |
+| Real weights size | **3.0 GB repo**, ~1.9 GB actually loaded (T3 870 MB + S3Gen meanflow 1.06 GB + VE 6 MB). Loaded model is **446M parameters** (T3 179M, S3Gen 266M), not "110M" |
+| Memory | **Peak 4.5 GB RAM**; load time 36 s |
+| Speed | **Real-time factor 2.2–2.7** (slower than real time) on 2 vCPUs, same at 2 and 4 threads. Vendor claim: 3x faster than real time on 8 cores |
+
+**Verdict: not realistic on inexpensive phones with the official weights** (1.9 GB model, 4.5 GB peak RAM, slower than real time even on a desktop-class CPU).
+Cloning quality looks promising on the model's own metric, but a phone-class build would need a heavily reduced model.
+
+What exists on the Hub (not evaluated): no official ONNX for Nano. Community ONNX exports (`KitsuMate/chatterbox-nano-onnx`, `…nano-v2-onnx`, `Masterx/chatterbox-nano-ONNX`,
+`owensong/chatterbox-nano-ONNX`), CoreML and GGUF ports exist; official **Turbo** ONNX has q4/q4f16 variants (about 560-720 MB in total). Provenance, exact licence, quality and
+speed of third-party conversions are unverified, and a phone port would also need the speech tokenizer, voice encoder and watermarker.
+
+Better-fitting idea to probe next: **voice conversion on top of the fast base voice** (e.g. OpenVoice V2's tone-colour converter, MIT) — Supertonic already runs at RTF ≈ 0.3 on a CI CPU,
+so the added cost would be only the converter. Unevaluated: converter size/speed, ONNX export, quality, Android feasibility.
+
 ## Sources
 - Chatterbox repo: https://github.com/resemble-ai/chatterbox
 - Chatterbox ONNX exports: https://huggingface.co/onnx-community/chatterbox-ONNX , https://huggingface.co/ResembleAI/chatterbox-turbo-ONNX
 - OpenVoice V2 model card: https://huggingface.co/myshell-ai/OpenVoiceV2
+- Chatterbox Nano probe run and samples: https://github.com/mrmundysr-sudo/Touch_Reader/releases/tag/probe-chatterbox-1
 - On-device TTS benchmark: https://picovoice.ai/blog/on-device-tts/
 - sherpa-onnx license/RTF spike (secondary): https://github.com/muxable/rtchat/issues/1500
