@@ -37,17 +37,23 @@ class SupertonicModelTest {
         val model = SupertonicModel.load(File(dir, "onnx"), threads = 2)
         val loadMs = (System.nanoTime() - t0) / 1_000_000
         val style = VoiceStyle.parse(File(dir, "voice_styles/M1.json").readText())
-        val synth = SupertonicSynthesizer(model, style, "en")
-        repeat(3) { run ->
-            val s0 = System.nanoTime()
-            val pcm = synth.synthesize(text, 1.05f) { false }
-            val synthSec = (System.nanoTime() - s0) / 1e9
-            val audioSec = pcm.size.toDouble() / synth.sampleRate
-            val rms = Math.sqrt(pcm.sumOf { (it / 32768.0) * (it / 32768.0) } / pcm.size)
-            println("RESULT run=$run loadMs=$loadMs sampleRate=${synth.sampleRate} audioSec=%.2f synthSec=%.2f RTF=%.3f rms=%.4f".format(audioSec, synthSec, synthSec / audioSec, rms))
-            assertTrue(audioSec in 2.0..20.0, "implausible duration $audioSec s")
-            assertTrue(rms > 0.01, "audio looks silent (rms=$rms)")
+        fun peakRssMb(): Long = runCatching {
+            File("/proc/self/status").readLines().first { it.startsWith("VmHWM:") }.filter(Char::isDigit).toLong() / 1024
+        }.getOrDefault(-1)
+        val shared = SupertonicSynthesizer(model, style, "en", totalSteps = 8)
+        for (steps in listOf(8, 4)) {
+            val synth = SupertonicSynthesizer(model, style, "en", totalSteps = steps)
+            repeat(2) { run ->
+                val s0 = System.nanoTime()
+                val pcm = synth.synthesize(text, 1.05f) { false }
+                val synthSec = (System.nanoTime() - s0) / 1e9
+                val audioSec = pcm.size.toDouble() / synth.sampleRate
+                val rms = Math.sqrt(pcm.sumOf { (it / 32768.0) * (it / 32768.0) } / pcm.size)
+                println("RESULT steps=$steps run=$run loadMs=$loadMs sampleRate=${synth.sampleRate} audioSec=%.2f synthSec=%.2f RTF=%.3f rms=%.4f peakRssMb=%d".format(audioSec, synthSec, synthSec / audioSec, rms, peakRssMb()))
+                assertTrue(audioSec in 2.0..20.0, "implausible duration $audioSec s")
+                assertTrue(rms > 0.01, "audio looks silent (rms=$rms)")
+            }
         }
-        synth.release()
+        shared.release()
     }
 }

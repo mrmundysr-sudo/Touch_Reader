@@ -30,7 +30,7 @@ out, base = sys.argv[1], sys.argv[2]
 tree = json.load(open(os.path.join(out, "tree.json")))
 for e in tree:
     p = e["path"]
-    if e["type"] != "file" or not (p.startswith("onnx/") or p.startswith("voice_styles/")):
+    if e["type"] != "file" or not (p.startswith("onnx/") or p.startswith("voice_styles/") or p == "LICENSE"):
         continue
     dest = os.path.join(out, p)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
