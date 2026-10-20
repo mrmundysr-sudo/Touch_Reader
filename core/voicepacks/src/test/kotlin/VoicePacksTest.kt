@@ -265,4 +265,10 @@ class BundledCatalogTest {
         assertTrue(p.files.all { it.url.startsWith("https://huggingface.co/") && it.url.contains("aafc6e32416a594460b32413efc49d7fe4ce6d46") }, "downloads must be pinned to one revision")
         assertTrue(p.sizeBytes in 390_000_000L..410_000_000L, "size ${p.sizeBytes}")
     }
+
+    /** Regression guard: voice-pack downloads fail on a real phone ("missing INTERNET permission?") without it. */
+    @Test fun manifestDeclaresInternetPermissionForDownloads() {
+        val manifest = java.io.File("../../app/src/main/AndroidManifest.xml").readText()
+        assertTrue(manifest.contains("android.permission.INTERNET"), "app needs INTERNET to download voice packs")
+    }
 }
