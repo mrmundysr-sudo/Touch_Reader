@@ -41,6 +41,7 @@ import com.mundymorning.touchreader.data.BookmarkEntity
 import com.mundymorning.touchreader.tts.EngineStatus
 import com.mundymorning.touchreader.ui.theme.ReaderFont
 import com.mundymorning.touchreader.ui.theme.highlightColor
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class Sheet { NONE, CHAPTERS, BOOKMARKS, VOICE, SPEED, SLEEP, TEXT }
@@ -228,6 +229,16 @@ private fun PlayerPanel(ui: com.mundymorning.touchreader.playback.PlayerUi, book
     Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
             Text(ui.chapterTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.padding(horizontal = 4.dp))
+            val activity by controller.engineActivity.collectAsState(initial = "")
+            if (activity.isNotEmpty()) {
+                var seconds by remember(activity) { mutableStateOf(0) }
+                LaunchedEffect(activity) { while (true) { delay(1000); seconds++ } }
+                Text(
+                    "$activity  ·  ${seconds}s ago",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
             var drag by remember { mutableStateOf<Float?>(null) }
             Slider(
                 value = drag ?: book.progress(ui.position),

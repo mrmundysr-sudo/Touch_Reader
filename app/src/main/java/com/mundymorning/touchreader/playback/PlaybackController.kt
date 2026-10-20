@@ -110,6 +110,11 @@ class PlaybackController(
     val engineStatus: Flow<EngineStatus>
         get() { engine(); return engineFlow.filterNotNull().flatMapLatest { it.status } }
 
+    /** What the narrator is doing right now (loading, preparing a voice, timings); empty if nothing to show. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val engineActivity: Flow<String>
+        get() { engine(); return engineFlow.filterNotNull().flatMapLatest { it.activity } }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val engines: Flow<List<TtsEngineInfo>>
         get() { engine(); return engineFlow.filterNotNull().flatMapLatest { it.engines } }
@@ -162,9 +167,12 @@ class PlaybackController(
         val pair = loaded.first
         if (pair == null) { _ui.value = PlayerUi(docId = docId, loadError = loaded.second); return }
         val (entity, book) = pair
-        val voice = entity.voiceName ?: settings.defaultVoice.value
-        val start = book.clamp(Position(entity.chapter, entity.sentence))
         val e = engine()
+        // A voice saved with this document may belong to another engine (e.g. an old system voice); it must not
+        // silently override the narrator the user chose since, so ignore it if the active neural engine does not know it.
+        val saved = entity.voiceName?.takeIf { v -> (e as? SupertonicAppEngine)?.hasVoice(v) ?: true }
+        val voice = saved ?: settings.defaultVoice.value
+        val start = book.clamp(Position(entity.chapter, entity.sentence))
         e.setSpeed(entity.speed)
         e.setVoice(voice)
         _ui.value = PlayerUi(docId, entity.title, book, false, null, start, NarrationState.IDLE, entity.speed, voice)
@@ -251,14 +259,14 @@ class PlaybackController(
     fun useCustomVoice(profileId: String) {
         val name = Engines.CUSTOM_PREFIX + profileId
         settings.setDefaultVoice(name)
-        if (settings.ttsEngine.value != Engines.NEURAL) switchEngine(Engines.NEURAL)
-        if (_ui.value.docId != null) setVoice(name)
+        if (settings.ttsEngine.value != Engines.NEURAL) switchEngine(Engines.NEURAL, name)
+        else if (_ui.value.docId != null) setVoice(name)
     }
 
     fun dismissSlowNotice() { _ui.update { it.copy(slowEngine = false) } }
 
     /** Switch narrator engine: null = system default, a package name, or [Engines.NEURAL]. Keeps place and play state. */
-    fun switchEngine(pkg: String?) {
+    fun switchEngine(pkg: String?, voice: String? = null) {
         settings.setTtsEngine(pkg)
         val ui = _ui.value
         val wasPlaying = ui.playing
@@ -269,9 +277,9 @@ class PlaybackController(
         val e = engine()
         e.setSpeed(ui.speed)
         // Voice names belong to one engine, so a switch resets the narrator to that engine's default.
-        e.setVoice(null)
-        ui.docId?.let { id -> scope.launch(Dispatchers.IO) { db.documents().setVoice(id, null) } }
-        _ui.update { it.copy(voiceName = null, state = NarrationState.IDLE, slowEngine = false) }
+        e.setVoice(voice)
+        ui.docId?.let { id -> scope.launch(Dispatchers.IO) { db.documents().setVoice(id, voice) } }
+        _ui.update { it.copy(voiceName = voice, state = NarrationState.IDLE, slowEngine = false) }
         ui.book?.let { attachSession(it, ui.position) }
         if (wasPlaying) play()
     }

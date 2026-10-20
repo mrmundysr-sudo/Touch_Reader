@@ -148,6 +148,19 @@ class ConvertingSynthesizerTest {
         assertTrue(out.maxOf { abs(it.toInt()) } in 3000..8000, "converted audio should be about half the base level")
     }
 
+    @Test fun reportsProgressAndTimingsWhileConverting() {
+        val s = ConvertingSynthesizer(FakeBase(), FakeConverter(), presets)
+        val said = mutableListOf<String>()
+        s.trace = { said += it }
+        s.useCustom { floatArrayOf(0.1f, 0.9f) }
+        s.synthesize("a", 1f, never); s.synthesize("b", 1f, never)
+        assertEquals(1, said.count { it.startsWith("Preparing your voice") }, "fingerprint step is announced once: $said")
+        assertEquals(2, said.count { it.startsWith("Step 1 of 2") })
+        assertEquals(2, said.count { it.startsWith("Your voice: 1.0 s of speech") }, said.toString())
+        said.clear(); s.usePreset("M1"); s.synthesize("c", 1f, never)
+        assertTrue(said.last().startsWith("Built-in voice: 1.0 s of speech"), said.toString())
+    }
+
     @Test fun fingerprintIsComputedOnceAndOnlyWhenNeeded() {
         var computed = 0
         val s = ConvertingSynthesizer(FakeBase(), FakeConverter(), presets)

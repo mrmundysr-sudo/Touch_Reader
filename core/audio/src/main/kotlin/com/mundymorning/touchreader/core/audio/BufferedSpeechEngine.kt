@@ -96,11 +96,13 @@ class BufferedSpeechEngine(
 
     private fun checkSlow() {
         val s = stats.snapshot()
-        if (!slowNotified && stats.windowFull(slowMinSamples) && s.averageRtf > slowRtf) {
+        if (!slowNotified && (stats.windowFull(slowMinSamples) && s.averageRtf > slowRtf || s.lastRtf > VERY_SLOW_RTF)) {
             slowNotified = true
             onSlow?.invoke(s.averageRtf)
         }
     }
+
+    private companion object { const val VERY_SLOW_RTF = 3.0 }
 
     private fun playLoop() {
         sink.open(synthesizer.sampleRate)

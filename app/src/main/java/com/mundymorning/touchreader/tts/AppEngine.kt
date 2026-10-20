@@ -11,6 +11,8 @@ interface AppEngine : SpeechEngine {
     val engines: StateFlow<List<TtsEngineInfo>>
     val defaultEnginePackage: String?
     fun setVoice(name: String?)
+    /** Short live status for the player ("Loading...", "took 12 s"); empty when the engine has nothing to say. */
+    val activity: StateFlow<String> get() = NO_ACTIVITY
     fun preview(name: String, sample: String)
 }
 
@@ -23,3 +25,5 @@ object Engines {
     const val CUSTOM_PREFIX = "custom:"
     const val PREVIEW_ID = -1
 }
+
+private val NO_ACTIVITY: StateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow("")

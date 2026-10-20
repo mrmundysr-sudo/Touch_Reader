@@ -109,6 +109,17 @@ class BufferedSpeechEngineTest {
         e.release()
     }
 
+    @Test fun veryHardSlowdownIsReportedAfterTheFirstSentence() {
+        // ~0.1 s of audio taking ~400 ms (RTF ~4): do not wait for three samples
+        val rec = Recorder(); val calls = AtomicInteger()
+        val e = BufferedSpeechEngine(FakeSynth(delayMs = 400), FakeSink(), slowMinSamples = 3).also { it.listener = rec }
+        e.onSlow = { calls.incrementAndGet() }
+        e.enqueue(1, "only one")
+        awaitUntil(5000) { rec.events.contains("done1") }
+        assertEquals(1, calls.get())
+        e.release()
+    }
+
     @Test fun fastSynthesisIsNotFlaggedAndFirstAudioIsMeasured() {
         val rec = Recorder(); val calls = AtomicInteger()
         val e = BufferedSpeechEngine(FakeSynth(delayMs = 5, samples = 1000), FakeSink()).also { it.listener = rec }
