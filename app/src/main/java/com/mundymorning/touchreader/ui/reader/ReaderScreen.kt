@@ -287,8 +287,8 @@ private fun BookmarksSheet(container: AppContainer, docId: Long, book: ReaderBoo
 
 @Composable
 private fun VoiceSheet(container: AppContainer, selected: String?, onDismiss: () -> Unit) {
-    val voices by container.controller.voices.collectAsState()
-    val status by container.controller.engineStatus.collectAsState()
+    val voices by container.controller.voices.collectAsState(initial = emptyList())
+    val status by container.controller.engineStatus.collectAsState(initial = com.mundymorning.touchreader.tts.EngineStatus.Initializing)
     val lang = java.util.Locale.getDefault().language
     SimpleSheet("Narrator", onDismiss) {
         item {
