@@ -1,0 +1,59 @@
+name: Probe Chatterbox-Nano
+
+# Manual feasibility probe: can a Chatterbox-Nano voice clone run on a plain CPU, how fast, how big, which licence?
+# Reference voices are synthetic (made with the Supertonic port), so no real person's voice is cloned.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - ".github/workflows/probe-chatterbox.yml"
+      - "scripts/probe_chatterbox.py"
+      - "scripts/probe_chatterbox_meta.py"
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      SUPERTONIC_DIR: ${{ github.workspace }}/.supertonic
+      REF_DIR: ${{ github.workspace }}/refs
+      PROBE_OUT: ${{ github.workspace }}/probe-out
+      CHATTERBOX_COMMIT: 5de7a54aa4e5e2baadb0182dde554908b48b85c2
+    steps:
+      - uses: actions/checkout@v4
+      - name: What does Hugging Face say about Chatterbox? (licence, ONNX, sizes)
+        run: python3 scripts/probe_chatterbox_meta.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Fetch Supertonic and make synthetic reference voices
+        run: |
+          ./scripts/probe-supertonic.sh > /dev/null
+          SUPERTONIC_REF_OUT="$REF_DIR" ./gradlew -PjvmOnly=true :core:supertonic:test --tests '*writeSyntheticReferenceClips' --rerun -i | grep -E "WROTE|FAILED|BUILD"
+          ls -la "$REF_DIR"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Chatterbox (CPU torch, pinned commit)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install "git+https://github.com/resemble-ai/chatterbox.git@${CHATTERBOX_COMMIT}"
+          pip list 2>/dev/null | grep -i -E "^(torch|torchaudio|transformers|chatterbox|resemble|s3tokenizer|numpy) "
+      - name: Run the probe
+        run: python scripts/probe_chatterbox.py
+      - name: Publish listening samples (synthetic voices only)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(ls "$PROBE_OUT"/clone_*.wav "$PROBE_OUT"/results.json "$REF_DIR"/ref_*.wav 2>/dev/null || true)
+          [ -n "$files" ] && gh release create "probe-chatterbox-${{ github.run_number }}" $files --prerelease \
+            --title "Chatterbox-Nano cloning probe #${{ github.run_number }}" \
+            --notes "Feasibility probe output. Reference voices are synthetic (Supertonic M1/F1); clone_*.wav are Chatterbox-Nano outputs. Not part of the app." || echo "nothing to publish"

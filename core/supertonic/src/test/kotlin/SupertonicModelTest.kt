@@ -56,4 +56,27 @@ class SupertonicModelTest {
         }
         shared.release()
     }
+
+    /** CI helper: writes synthetic reference voices (no real person involved) for the Chatterbox cloning probe. */
+    @Test fun writeSyntheticReferenceClips() {
+        val dir = System.getenv("SUPERTONIC_DIR")?.let(::File) ?: return
+        val out = System.getenv("SUPERTONIC_REF_OUT")?.let(::File) ?: return
+        out.mkdirs()
+        val text = "On a quiet morning the village woke slowly, and the baker lit his oven while the children ran down to the river. " +
+            "By noon the market was full of voices, bright fruit and the smell of warm bread drifting across the square."
+        val model = SupertonicModel.load(File(dir, "onnx"), threads = 2)
+        for (v in listOf("M1", "F1")) {
+            val synth = SupertonicSynthesizer(model, VoiceStyle.parse(File(dir, "voice_styles/$v.json").readText()), "en", totalSteps = 8)
+            val pcm = synth.synthesize(text, 1.0f) { false }
+            val bytes = java.io.ByteArrayOutputStream()
+            fun le(x: Int, n: Int) { for (i in 0 until n) bytes.write((x shr (8 * i)) and 0xFF) }
+            bytes.write("RIFF".toByteArray()); le(36 + pcm.size * 2, 4); bytes.write("WAVEfmt ".toByteArray())
+            le(16, 4); le(1, 2); le(1, 2); le(synth.sampleRate, 4); le(synth.sampleRate * 2, 4); le(2, 2); le(16, 2)
+            bytes.write("data".toByteArray()); le(pcm.size * 2, 4)
+            for (s in pcm) le(s.toInt() and 0xFFFF, 2)
+            File(out, "ref_$v.wav").writeBytes(bytes.toByteArray())
+            println("WROTE ref_$v.wav seconds=%.1f".format(pcm.size.toDouble() / synth.sampleRate))
+        }
+        model.close()
+    }
 }
