@@ -46,13 +46,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
-          pip install onnxruntime numpy scipy librosa soundfile sentencepiece huggingface_hub
+          pip install onnxruntime numpy scipy librosa soundfile sentencepiece huggingface_hub safetensors
           pip install resemblyzer || echo "resemblyzer unavailable (optional)"
           python - <<'PY'
           import os
           from huggingface_hub import snapshot_download
           d = snapshot_download(repo_id="KevinAHM/pocket-tts-onnx", revision=os.environ["POCKET_ONNX_REV"],
-              allow_patterns=["onnx/*int8*", "onnx/mimi_encoder.onnx", "onnx/text_conditioner.onnx", "onnx/LICENSE", "*.py", "tokenizer.model", "README.md", "requirements.txt"],
+              allow_patterns=["onnx/english_2026-04/*int8*", "onnx/english_2026-04/mimi_encoder.onnx", "onnx/english_2026-04/text_conditioner.onnx", "onnx/english_2026-04/bundle.json", "onnx/english_2026-04/bos_before_voice.npy", "onnx/english_2026-04/tokenizer.model", "onnx/LICENSE", "*.py", "README.md", "requirements.txt"],
               local_dir=os.environ["POCKET_SRC"])
           for r, _, fs in os.walk(d):
               for f in fs: print("FETCHED", os.path.relpath(os.path.join(r, f), d), os.path.getsize(os.path.join(r, f)))

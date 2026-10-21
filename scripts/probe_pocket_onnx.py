@@ -13,6 +13,7 @@ OUT = os.environ.get("PROBE_OUT", "probe-out")
 os.makedirs(OUT, exist_ok=True)
 sys.path.insert(0, SRC)
 os.chdir(SRC)
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 
 def rss_mb():
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
