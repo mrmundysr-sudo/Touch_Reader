@@ -60,6 +60,8 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
     val neuralInstalled = packStates[Engines.NEURAL_PACK_ID] is PackState.Installed
     val labReady = packStates[Engines.POCKET_PACK_ID] is PackState.Installed
     val lab by container.voiceLab.state.collectAsState()
+    var labPick by remember { mutableStateOf<VoiceProfile?>(null) }
+    var labSeconds by remember { mutableIntStateOf(15) }
     val labPlaying by container.samplePlayer.playingKey.collectAsState()
     val lang = Locale.getDefault().language
     val shown = remember(voices, allLanguages) { if (allLanguages) voices else voices.filter { it.language == lang || it.language.isEmpty() } }
@@ -157,7 +159,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                     },
                 )
                 if (labReady && container.voiceLibrary.sampleFile(v.id) != null) {
-                    TextButton({ container.voiceLab.make(v.id, v.name) }, Modifier.padding(start = 16.dp)) { Text("Try in voice lab (experimental)") }
+                    TextButton({ labSeconds = 15; labPick = v }, Modifier.padding(start = 16.dp)) { Text("Try in voice lab (experimental)") }
                 }
               }
             }
@@ -204,14 +206,14 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                         is com.mundymorning.touchreader.lab.LabState.Working -> Text(st.message + "\n\nThis can take a few minutes on a slower phone. Keep the app open.")
                         is com.mundymorning.touchreader.lab.LabState.Failed -> Text(st.message, color = MaterialTheme.colorScheme.error)
                         is com.mundymorning.touchreader.lab.LabState.Done -> {
-                            Text("A ${"%.0f".format(st.audioSeconds)} second sample was made from your saved recording and played. Listen for how close it is to the real person.", style = MaterialTheme.typography.bodyMedium)
+                            Text("A ${"%.0f".format(st.audioSeconds)} second sample was made, copying the voice from ${"%.0f".format(st.referenceSeconds)} seconds of your saved recording, and played. Listen for how close it is to the real person.", style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 "Timings on this phone:\n" +
                                     "• Making speech: ${"%.1f".format(st.speechSeconds)} s for ${"%.1f".format(st.audioSeconds)} s of audio (${"%.2f".format(st.rtf)} s of work per second of speech" +
                                     (if (st.rtf <= 1.0) "; fast enough to read live)" else "; slower than real time)") + "\n" +
                                     "• Loading the model: ${"%.1f".format(st.loadSeconds)} s\n" +
-                                    "• Studying the recording: " + (if (st.voiceCached) "already done earlier" else st.voiceSeconds?.let { "${"%.1f".format(it)} s" } ?: "-"),
+                                    "• Studying ${"%.0f".format(st.referenceSeconds)} s of the recording: " + (if (st.voiceCached) "already done earlier" else st.voiceSeconds?.let { "${"%.1f".format(it)} s" } ?: "-"),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -227,6 +229,27 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                 }
             },
             dismissButton = { if (st !is com.mundymorning.touchreader.lab.LabState.Working) TextButton({ container.voiceLab.close() }) { Text("Close") } },
+        )
+    }
+
+    labPick?.let { v ->
+        AlertDialog(
+            onDismissRequest = { labPick = null },
+            title = { Text("Voice lab: ${v.name}") },
+            text = {
+                Column {
+                    Text("How much of the saved recording should the voice be copied from? Longer may capture the voice better, but it is slower and unproven. Make a sample at each length and compare. If the recording is shorter than the choice, all of it is used.", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    listOf(15, 30, 45).forEach { sec ->
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(labSeconds == sec, role = Role.RadioButton) { labSeconds = sec },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) { RadioButton(labSeconds == sec, null); Spacer(Modifier.width(12.dp)); Text("$sec seconds" + if (sec == 15) " (default)" else "") }
+                    }
+                }
+            },
+            confirmButton = { TextButton({ container.voiceLab.make(v.id, v.name, labSeconds); labPick = null }) { Text("Make sample") } },
+            dismissButton = { TextButton({ labPick = null }) { Text("Cancel") } },
         )
     }
 

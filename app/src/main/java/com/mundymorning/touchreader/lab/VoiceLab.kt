@@ -22,6 +22,8 @@ sealed interface LabState {
         val loadSeconds: Double,
         val voiceSeconds: Double?,
         val voiceCached: Boolean,
+        /** How many seconds of the recording the voice was copied from. */
+        val referenceSeconds: Double,
     ) : LabState {
         /** Seconds of work per second of speech; below 1.0 a book could be read live on this phone. */
         val rtf: Double get() = speechSeconds / audioSeconds
@@ -57,7 +59,7 @@ class VoiceLab(
         _state.value = LabState.Idle
     }
 
-    fun make(profileId: String, voiceName: String) {
+    fun make(profileId: String, voiceName: String, referenceSeconds: Int = 15) {
         if (worker?.isAlive == true) return
         val dir = packs.installedDir(Engines.POCKET_PACK_ID) ?: run { _state.value = LabState.Failed(voiceName, "Install the voice lab download first."); return }
         val file = library.sampleFile(profileId) ?: run { _state.value = LabState.Failed(voiceName, "This voice has no saved recording."); return }
@@ -65,10 +67,10 @@ class VoiceLab(
         sample = null
         player.stop()
         _state.value = LabState.Working(voiceName, "Loading the model...")
-        worker = Thread({ execute(dir, file, profileId, voiceName) }, "tr-voice-lab").apply { isDaemon = true; start() }
+        worker = Thread({ execute(dir, file, profileId, voiceName, referenceSeconds) }, "tr-voice-lab").apply { isDaemon = true; start() }
     }
 
-    private fun execute(dir: java.io.File, file: java.io.File, profileId: String, voiceName: String) {
+    private fun execute(dir: java.io.File, file: java.io.File, profileId: String, voiceName: String, referenceSeconds: Int) {
         try {
             val threads = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
             val t0 = System.nanoTime()
@@ -77,16 +79,19 @@ class VoiceLab(
                 if (cancelled) return
 
                 var voiceSeconds: Double? = null
-                val cached = library.engineData(profileId, ENGINE, VERSION)?.let { PocketTts.decodeEmbedding(it, tts.bundle.conditioningDim) }
+                var used = 0.0
+                val version = "$VERSION-${referenceSeconds}s" // a different length is a different voice fingerprint
+                val cached = library.engineData(profileId, ENGINE, version)?.let { PocketTts.decodeEmbedding(it, tts.bundle.conditioningDim) }
                 val embedding = cached ?: run {
                     _state.value = LabState.Working(voiceName, "Studying the recording...")
                     val v0 = System.nanoTime()
                     val pcm = Dsp.resample(WavIo.read(file.readBytes()), tts.bundle.sampleRate)
-                    tts.encodeVoice(pcm.samples).also {
+                    tts.encodeVoice(pcm.samples, referenceSeconds.toFloat()).also {
                         voiceSeconds = (System.nanoTime() - v0) / 1e9
-                        library.saveEngineData(profileId, ENGINE, VERSION, PocketTts.encodeEmbedding(it))
+                        library.saveEngineData(profileId, ENGINE, version, PocketTts.encodeEmbedding(it))
                     }
                 }
+                used = embedding.frames * tts.bundle.samplesPerFrame.toDouble() / tts.bundle.sampleRate
                 if (cancelled) return
 
                 tts.prepareVoice(embedding).use { voice ->
@@ -108,7 +113,7 @@ class VoiceLab(
                     val all = FloatArray(out.sumOf { it.size }).also { a -> var o = 0; out.forEach { p -> p.copyInto(a, o); o += p.size } }
                     val pcm = Pcm(tts.bundle.sampleRate, all)
                     sample = pcm
-                    _state.value = LabState.Done(voiceName, pcm.seconds, work, loadSeconds, voiceSeconds, cached != null)
+                    _state.value = LabState.Done(voiceName, pcm.seconds, work, loadSeconds, voiceSeconds, cached != null, used)
                     player.playPcm(PLAY_KEY, pcm)
                 }
             }
