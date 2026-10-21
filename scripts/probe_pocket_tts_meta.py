@@ -54,17 +54,3 @@ for m in onnx:
 for rid in ("ottomate/pocket-tts-ONNX",):
     detail(rid)
 
-print("=== GITHUB: ONNX exporter ===")
-dest = "/tmp/pocket-onnx-export"
-r = subprocess.run(["git", "clone", "--depth", "1", "https://github.com/KevinAHM/pocket-tts-onnx-export", dest], capture_output=True, text=True)
-print(r.stdout, r.stderr)
-if os.path.isdir(dest):
-    print("HEAD", subprocess.run(["git", "-C", dest, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip())
-    for root, _, files in os.walk(dest):
-        if ".git" in root: continue
-        for f in files:
-            p = os.path.join(root, f); print("TREE", os.path.relpath(p, dest), os.path.getsize(p))
-    for f in ("README.md", "LICENSE"):
-        p = os.path.join(dest, f)
-        if os.path.exists(p):
-            print(f"=== BEGIN exporter/{f} ==="); print(open(p, errors="replace").read()[:15000]); print(f"=== END {f} ===")

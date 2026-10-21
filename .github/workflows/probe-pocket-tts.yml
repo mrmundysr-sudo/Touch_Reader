@@ -9,6 +9,7 @@ on:
     paths:
       - ".github/workflows/probe-pocket-tts.yml"
       - "scripts/probe_pocket_tts.py"
+      - "scripts/probe_pocket_onnx.py"
       - "scripts/probe_pocket_tts_meta.py"
 
 permissions:
@@ -22,6 +23,8 @@ jobs:
       SUPERTONIC_DIR: ${{ github.workspace }}/.supertonic
       REF_DIR: ${{ github.workspace }}/refs
       PROBE_OUT: ${{ github.workspace }}/probe-out
+      POCKET_SRC: ${{ github.workspace }}/pocket-onnx
+      POCKET_ONNX_REV: 58a6d00cf13d239b6748cb0769f35c580a8f606c
     steps:
       - uses: actions/checkout@v4
       - name: What do Hugging Face and GitHub say about Pocket TTS? (licence, ONNX ports, sizes)
@@ -39,15 +42,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Pocket TTS (CPU torch)
+      - name: Install ONNX Runtime and fetch the pinned ONNX export (int8, English)
         run: |
           python -m pip install --upgrade pip
           pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
-          pip install pocket-tts numpy scipy librosa soundfile huggingface_hub
+          pip install onnxruntime numpy scipy librosa soundfile sentencepiece huggingface_hub
           pip install resemblyzer || echo "resemblyzer unavailable (optional)"
-          pip list 2>/dev/null | grep -i -E "^(torch|pocket|numpy|scipy|librosa|resemblyzer|sentencepiece) "
+          python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          d = snapshot_download(repo_id="KevinAHM/pocket-tts-onnx", revision=os.environ["POCKET_ONNX_REV"],
+              allow_patterns=["onnx/*int8*", "onnx/mimi_encoder.onnx", "onnx/text_conditioner.onnx", "onnx/LICENSE", "*.py", "tokenizer.model", "README.md", "requirements.txt"],
+              local_dir=os.environ["POCKET_SRC"])
+          for r, _, fs in os.walk(d):
+              for f in fs: print("FETCHED", os.path.relpath(os.path.join(r, f), d), os.path.getsize(os.path.join(r, f)))
+          print("=== BEGIN README ==="); print(open(os.path.join(d, "README.md"), errors="replace").read()[:9000]); print("=== END README ===")
+          print("=== BEGIN pocket_tts_onnx.py ==="); print(open(os.path.join(d, "pocket_tts_onnx.py"), errors="replace").read()); print("=== END pocket_tts_onnx.py ===")
+          PY
       - name: Run the probe
-        run: python scripts/probe_pocket_tts.py
+        run: python scripts/probe_pocket_onnx.py
       - name: Publish listening samples (synthetic voices only)
         if: always()
         env:
