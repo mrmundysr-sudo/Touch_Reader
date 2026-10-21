@@ -1,4 +1,4 @@
-# Touch Reader — Status (through Phase 3)
+# Touch Reader — Status (through Phase 4, first version)
 
 Legend: **Verified** = exercised by an automated test that ran. **Built** = compiles in CI but never run
 on a device or emulator. **Not built** = does not exist.
@@ -74,11 +74,40 @@ Test builds can still bundle the converter (`bundle_converter` workflow input, +
 Unproven until someone listens/measures on a phone: how it sounds with a real voice and a real phone microphone, speed and memory on phone CPUs with both models loaded, behaviour with noisy recordings. The first sentence with a custom voice also waits for fingerprint extraction (a few seconds, then cached).
 Limits that will not go away: it changes timbre only (accent, rhythm and wording style are the base voice's); every output is machine-generated speech and the neural voice's licence requires it to be labelled as such when shared.
 
+## Phase 4 — Audiobook export (first version)
+
+Why: on a low-end phone the neural voice (and especially a saved voice) makes speech slower than real time, so live reading keeps pausing.
+Measured on the owner's phone: about 9 s to make one sentence of about 7 s of speech with a built-in neural voice, and slower again with a saved voice.
+Making the audio ahead of time and playing a file works on any phone.
+
+| Item | State | Evidence |
+|---|---|---|
+| AAC-in-ADTS framing (read/write, concatenation, corrupt/truncated input) | **Verified** | JVM tests; also decoded by ffmpeg |
+| M4B (MP4) writer: index first, chunk tables, chapter list (Nero `chpl`), tags | **Verified** against a real decoder: ffprobe reads codec, sample rate, both chapters with titles/start times and tags; ffmpeg decodes the whole file with no errors (the test skips itself if ffmpeg is not installed) | `RealDecoderTest` + structure tests |
+| Planner (chunks of at most 8 sentences, chapter selection, pauses between sentences/paragraphs, spoken chapter titles) | **Verified** | JVM tests |
+| Crash-safe store: a chunk only counts once its audio file is renamed into place; chunks join into one file per chapter; leftovers from a crash are cleaned up; read-only opens never touch a running render's files | **Verified** | JVM tests |
+| Engine: stop at any time and continue later without redoing finished chunks; one failed sentence becomes silence, three in a row stop the run; live time-left estimate | **Verified** (fake voice, fake encoder). A test found and fixed a real bug where the silence for a failed sentence reset the failure counter | JVM tests |
+| Size and time estimates; speed classification; scaling from one timing to other settings | **Verified** as arithmetic. The step-count (0.55) and voice-conversion (2x) ratios are assumptions from CI timings, replaced by real timings on the phone when available | JVM tests |
+| Speed learned from the sentences actually narrated (first sentence left out) | **Verified** (fake) | JVM tests |
+| Android AAC encoder (MediaCodec), export service with Stop button and notification, battery/unplugged pause | **Built**, never run on a phone | – |
+| Export screen: voice (built-in or saved voice, "takes much longer"), Faster/Better quality, file size, chapter choice, live estimate, Start / Stop / Continue / Start over / Delete, save .m4b | **Built**, never run | – |
+| In-app audiobook player (finished chapters, seek, +30 s / -15 s, speed, remembers position) with background service and notification | **Built**, never run | – |
+| First-use advice: if the neural voice is slower than real time after the first narrated sentences, the reader offers "Create audiobook" / "Use system voice" / "Keep trying" | **Built**, never run | – |
+
+Not done / limits:
+- Output is AAC (M4B). No MP3 (an MP3 encoder would need an extra licensed library).
+- Only neural voices are exported (built-in presets and saved voices). The Android system voice is not exported.
+- Android may limit very long background jobs; stopping is safe and Continue resumes at the first unfinished piece, but a render does not restart by itself.
+- Chapters become playable as they finish. The single .m4b file is assembled once every chapter is finished.
+- No sentence highlighting while an audiobook plays (timings are saved for it, nothing uses them yet).
+- Audiobooks made with the neural voice must be labelled as machine-generated when shared (the file's comment tag says so).
+- The library has no cover-image grid yet.
+
 ## Not built
 
 - Kokoro and Piper (ruled out for now; see RESEARCH.md)
 - Chatterbox-Nano cloning was probed and rejected for phones (1.9 GB model, 4.5 GB RAM, slower than real time on CPU); see `RESEARCH.md`.
-- Audiobook export, MP3/M4B (Phase 4)
+- MP3 export; cover-image library
 - OCR; DOC/RTF/ODT/MOBI/FB2
 - Performance, battery and low-memory measurements (none taken)
 - Accessibility audit, license audit, Play policy review (Phase 5)
