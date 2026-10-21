@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(container: AppContainer, onOpen: (id: Long, play: Boolean) -> Unit) {
+fun LibraryScreen(container: AppContainer, onOpen: (id: Long, play: Boolean) -> Unit, onAudiobook: (id: Long) -> Unit) {
     val docs by container.db.documents().observeAll().collectAsState(initial = emptyList())
     var query by rememberSaveable { mutableStateOf("") }
     var importing by remember { mutableStateOf(false) }
@@ -83,6 +83,7 @@ fun LibraryScreen(container: AppContainer, onOpen: (id: Long, play: Boolean) -> 
                             d,
                             onOpen = { onOpen(d.id, false) },
                             onResume = { onOpen(d.id, true) },
+                            onAudiobook = { onAudiobook(d.id) },
                             onRename = { renaming = d },
                             onRemove = { removing = d },
                         )
@@ -149,6 +150,7 @@ private fun DocumentCard(
     d: DocumentEntity,
     onOpen: () -> Unit,
     onResume: () -> Unit,
+    onAudiobook: () -> Unit,
     onRename: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -163,6 +165,7 @@ private fun DocumentCard(
                 Box {
                     IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, "More options for ${d.title}") }
                     DropdownMenu(menu, { menu = false }) {
+                        DropdownMenuItem(text = { Text("Audiobook…") }, leadingIcon = { Icon(Icons.Rounded.Headphones, null) }, onClick = { menu = false; onAudiobook() })
                         DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { menu = false; onRename() })
                         DropdownMenuItem(text = { Text("Remove from library") }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }, onClick = { menu = false; onRemove() })
                     }
@@ -184,6 +187,12 @@ private fun DocumentCard(
                     Text("${(d.progress * 100).toInt()}% read", style = MaterialTheme.typography.labelMedium)
                     Text("Narrator: ${d.voiceName ?: "System default"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                OutlinedButton(onClick = onAudiobook, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Icon(Icons.Rounded.Headphones, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Audiobook")
+                }
+                Spacer(Modifier.width(8.dp))
                 FilledTonalButton(onClick = onResume, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Rounded.PlayArrow, null)
                     Spacer(Modifier.width(4.dp))

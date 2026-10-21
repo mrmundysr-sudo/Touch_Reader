@@ -100,7 +100,7 @@ private fun AppRoot(container: AppContainer, pendingDoc: Long, pendingExport: Lo
     ) { padding ->
         NavHost(nav, startDestination = "library", modifier = Modifier.padding(padding)) {
             composable("library") {
-                LibraryScreen(container) { id, play -> nav.navigate("reader/$id?play=$play") }
+                LibraryScreen(container, onOpen = { id, play -> nav.navigate("reader/$id?play=$play") }, onAudiobook = { id -> nav.navigate("export/$id") })
             }
             composable("voices") { VoicesScreen(container, onCreateVoice = { nav.navigate("studio") }) }
             composable("studio") { VoiceStudioScreen(container, onClose = { nav.popBackStack() }) }
