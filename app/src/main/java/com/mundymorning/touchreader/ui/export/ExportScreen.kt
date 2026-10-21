@@ -130,7 +130,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
     val editing = m == null || startingOver
     val active = if (editing) ExportSettings(voice, steps, kbps, selected.sorted(), true) else m!!.settings
     val custom = active.voice.startsWith(Engines.CUSTOM_PREFIX)
-    val busyElsewhere = status.running && status.docId != docId
+    val busyElsewhere = status.running && status.phase != ExportPhase.TESTING && status.docId != docId
     val rendering = status.running && status.docId == docId
 
     Scaffold(
