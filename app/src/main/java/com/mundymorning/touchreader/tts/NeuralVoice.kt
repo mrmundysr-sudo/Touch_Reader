@@ -10,6 +10,8 @@ import com.mundymorning.touchreader.core.voiceconvert.ConvertingSynthesizer
 import com.mundymorning.touchreader.core.voiceconvert.EmbeddingCodec
 import com.mundymorning.touchreader.core.voiceconvert.LazyToneConverter
 import com.mundymorning.touchreader.core.voiceconvert.OnnxToneConverter
+import com.mundymorning.touchreader.core.voiceconvert.PresetChooser
+import com.mundymorning.touchreader.core.voicestudio.Pcm
 import com.mundymorning.touchreader.core.voicestudio.Dsp
 import com.mundymorning.touchreader.core.voicestudio.WavIo
 import com.mundymorning.touchreader.studio.VoiceLibrary
@@ -27,7 +29,39 @@ class NeuralVoice private constructor(
     private val converterInstalled: Boolean,
     val presets: List<String>,
     val defaultPreset: String,
+    private val presetFingerprints: Map<String, FloatArray>,
 ) {
+    /** How close a saved voice gets to its recording, measured with the converter's own voice fingerprint (1.0 = identical). */
+    class MatchReport(
+        val basePreset: String,
+        /** Recording vs the built-in voice the conversion starts from: how much there is to change. */
+        val recordingVsBase: Double,
+        /** The base voice itself vs the recording. */
+        val baseOutput: Double,
+        /** Strength multiplier -> similarity of the converted speech to the recording. */
+        val converted: List<Pair<Double, Double>>,
+    )
+
+    /** Speaks [sentence] with the nearest built-in voice and with the saved voice (at several strengths) and compares both with the recording. Slow; call from a worker thread. */
+    fun checkMatch(voiceName: String, sentence: String, strengths: List<Double> = listOf(1.0, 1.4, 1.8)): MatchReport? {
+        val id = voiceName.takeIf { it.startsWith(Engines.CUSTOM_PREFIX) }?.removePrefix(Engines.CUSTOM_PREFIX) ?: return null
+        val conv = converter ?: return null
+        val target = fingerprintFor(id) ?: return null
+        val preset = PresetChooser.choose(target, presetFingerprints)
+        val src = presetFingerprints[preset] ?: return null
+        synthesizer.usePreset(preset)
+        val pcm = synthesizer.synthesize(sentence, 1f) { false }
+        if (pcm.isEmpty()) return null
+        val atConv = Dsp.resample(Pcm(synthesizer.sampleRate, FloatArray(pcm.size) { pcm[it] / 32768f }), conv.sampleRate).samples
+        val baseOutput = EmbeddingCodec.cosine(conv.embed(atConv), target)
+        val results = strengths.mapNotNull { a ->
+            val tgt = FloatArray(target.size) { src[it] + (a * (target[it] - src[it])).toFloat() }
+            val out = conv.convert(atConv, src, tgt) { false } ?: return@mapNotNull null
+            a to EmbeddingCodec.cosine(conv.embed(out), target)
+        }
+        return MatchReport(preset, EmbeddingCodec.cosine(src, target), baseOutput, results)
+    }
+
     /** Picks the narrator: a built-in preset such as "M1", or "custom:<id>" for a saved voice. Anything unknown becomes the default preset. */
     fun setVoice(name: String?) {
         val id = name?.takeIf { it.startsWith(Engines.CUSTOM_PREFIX) }?.removePrefix(Engines.CUSTOM_PREFIX)
@@ -91,9 +125,10 @@ class NeuralVoice private constructor(
                 val cfg = ConverterConfig.parse(File(d, "converter_config.json").readText())
                 LazyToneConverter(cfg.sampleRate) { OnnxToneConverter.load(d, threads) }
             }
-            val s = ConvertingSynthesizer(base, conv, converterDir?.let { OnnxToneConverter.loadSourceEmbeddings(it) } ?: emptyMap())
+            val fingerprints = converterDir?.let { OnnxToneConverter.loadSourceEmbeddings(it) } ?: emptyMap()
+            val s = ConvertingSynthesizer(base, conv, fingerprints)
             s.trace = trace
-            val voice = NeuralVoice(s, conv, library, converterDir != null, presets, default)
+            val voice = NeuralVoice(s, conv, library, converterDir != null, presets, default, fingerprints)
             voice.setVoice(initialVoice)
             return voice
         }

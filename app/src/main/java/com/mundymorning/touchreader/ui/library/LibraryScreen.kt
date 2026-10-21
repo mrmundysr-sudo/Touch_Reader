@@ -182,17 +182,17 @@ private fun DocumentCard(
             Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(progress = { d.progress }, Modifier.fillMaxWidth().height(6.dp))
             Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("${(d.progress * 100).toInt()}% read", style = MaterialTheme.typography.labelMedium)
-                    Text("Narrator: ${d.voiceName ?: "System default"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+            Column(Modifier.fillMaxWidth()) {
+                Text("${(d.progress * 100).toInt()}% read", style = MaterialTheme.typography.labelMedium)
+                Text("Narrator: ${d.voiceName?.let { if (it.startsWith("custom:")) "your voice" else it } ?: "System default"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(onClick = onAudiobook, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Rounded.Headphones, null)
                     Spacer(Modifier.width(4.dp))
                     Text("Audiobook")
                 }
-                Spacer(Modifier.width(8.dp))
                 FilledTonalButton(onClick = onResume, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Rounded.PlayArrow, null)
                     Spacer(Modifier.width(4.dp))

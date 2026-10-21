@@ -72,6 +72,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmRestart by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var matchReport by remember { mutableStateOf<String?>(null) }
 
     val neuralDir = remember(status.phase) { container.voicePacks.installedDir(Engines.NEURAL_PACK_ID) }
     val converterInstalled = remember(status.phase) { container.voicePacks.installedDir(Engines.CONVERTER_PACK_ID) != null }
@@ -219,10 +220,16 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                                 }
                             }
                         }
-                        if (custom) Text(
-                            "Your own voice takes much longer: every sentence is spoken by a built-in voice first and then changed to sound like you.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
-                        )
+                        if (custom) {
+                            Text(
+                                "Your own voice takes much longer: every sentence is spoken by a built-in voice first and then changed to sound like you.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
+                            )
+                            OutlinedButton({ scope.launch { matchReport = exporter.checkVoiceMatch(voice) } }, enabled = !status.running) {
+                                Text("Check how close this voice is (a minute or two)")
+                            }
+                            matchReport?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                        }
                         if (!converterInstalled && profiles.isNotEmpty()) Text("To use your own voice, install the Voice cloning add-on in the Voices tab.", style = MaterialTheme.typography.bodySmall)
 
                         Text("Speed or quality", fontWeight = FontWeight.Bold)
