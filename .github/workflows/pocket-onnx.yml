@@ -50,5 +50,23 @@ jobs:
           POCKET_GOLDEN: ${{ github.workspace }}/pocket-golden
         run: |
           set -o pipefail
-          ./gradlew -PjvmOnly=true :core:pockettts:test --rerun -i 2>&1 | tee test.log | grep -E "^\s*(TOKENIZER|TEXT|ENCODER|PREPARE_VOICE|CONDITIONING|FLOW|DECODER|GENERATE)|FAILED|PASSED|tests completed|BUILD|AssertionFailed|differs|mismatch|Exception" | head -80
+          ./gradlew -PjvmOnly=true :core:pockettts:test --rerun -i 2>&1 | tee test.log | grep -E "^\s*(TOKENIZER|TEXT|ENCODER|PREPARE_VOICE|COND_STEP|CONDITIONING|FLOW|DECODER|GENERATE)|FAILED|PASSED|tests completed|BUILD|AssertionFailed|differs|mismatch|Exception" | head -80
           grep -q "BUILD SUCCESSFUL" test.log
+
+      - name: Is the Kotlin speech intelligible? (transcribe it)
+        if: always()
+        run: |
+          pip install -q faster-whisper
+          python - <<'PY'
+          from faster_whisper import WhisperModel
+          m = WhisperModel("tiny.en", compute_type="int8")
+          segs, _ = m.transcribe("pocket-golden/kotlin_out.wav", language="en")
+          print("TRANSCRIPT:", " ".join(s.text.strip() for s in segs))
+          print("WANTED:    The quick brown fox jumps over the lazy dog, and then it rests beside the river.")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pocket-kotlin-sample
+          path: pocket-golden/kotlin_out.wav
+          if-no-files-found: ignore

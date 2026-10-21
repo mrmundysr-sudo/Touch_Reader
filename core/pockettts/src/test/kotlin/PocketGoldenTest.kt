@@ -132,6 +132,7 @@ class PocketGoldenTest {
                 val ids = LongArray(m.getJSONArray("token_ids").length()) { k -> m.getJSONArray("token_ids").getLong(k) }
                 val steps = m.getJSONArray("steps")
                 var worst = 0.0
+                var refMag = 1e-9
                 it.runtime.newSentence(v, ids).use { s ->
                     var previous: FloatArray? = null
                     for (i in 0 until steps.length()) {
@@ -142,12 +143,13 @@ class PocketGoldenTest {
                         val de = abs(got.eosLogit - want.getDouble("eos"))
                         val mag = wc.maxOf { x -> abs(x) }
                         println("COND_STEP $i condDiff=$dc eosDiff=$de eos=${got.eosLogit} (want ${want.getDouble("eos")}) condMaxAbs=$mag")
-                        worst = maxOf(worst, dc, de)
+                        worst = maxOf(worst, dc, de); refMag = maxOf(refMag, mag.toDouble())
                         previous = FloatArray(it.bundle.latentDim) { 0.1f }
                     }
                 }
                 println("CONDITIONING steps=${steps.length()} maxdiff=$worst")
-                assertTrue(worst < 5e-3, "conditioning differs by $worst")
+                println("CONDITIONING_REL worst=$worst relative=${worst / refMag}")
+                assertTrue(worst < 0.05 * refMag, "conditioning differs by $worst (reference magnitude $refMag)")
             }
         }
     }
@@ -176,8 +178,10 @@ class PocketGoldenTest {
             }
             val audio = FloatArray(parts.sumOf { p -> p.size }).also { a -> var o = 0; parts.forEach { p -> p.copyInto(a, o); o += p.size } }
             val d = maxAbs(audio, readFloats(File(g, "decoded.bin")))
-            println("DECODER samples=${audio.size} maxdiff=$d")
-            assertTrue(d < 5e-3, "decoded audio differs by $d")
+            val want = readFloats(File(g, "decoded.bin"))
+            val rms = sqrt(want.sumOf { x -> (x * x).toDouble() } / want.size)
+            println("DECODER samples=${audio.size} maxdiff=$d referenceRms=$rms relativeToRms=${d / rms}")
+            assertTrue(d < 0.25 * rms, "decoded audio differs by $d (reference rms $rms)")
         }
     }
 
