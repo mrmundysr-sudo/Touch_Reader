@@ -275,8 +275,19 @@ class PocketTtsFacadeTest {
         val seen = ArrayList<Int>()
         val rt = object : PocketRuntime by FakeRuntime() { override fun encodeVoice(samples24k: FloatArray): FloatArray { seen += samples24k.size; return FloatArray(3 * 6) } }
         val e = tts(rt).encodeVoice(FloatArray(24000 * 40))
-        assertEquals(24000 * 15, seen[0]); assertEquals(6, e.frames)
+        assertEquals(listOf(24000 * 15), seen); assertEquals(6, e.frames)
         assertFailsWith<IllegalArgumentException> { tts().encodeVoice(FloatArray(1000)) }
+    }
+
+    @Test fun longRecordingsAreEncodedInPiecesAndATinyTailJoinsThePreviousPiece() {
+        val seen = ArrayList<Int>()
+        val rt = object : PocketRuntime by FakeRuntime() { override fun encodeVoice(samples24k: FloatArray): FloatArray { seen += samples24k.size; return FloatArray(3 * 2) } }
+        tts(rt).encodeVoice(FloatArray(24000 * 45), 45f)
+        assertEquals(listOf(359040, 359040, 361920), seen) // 15 s pieces of whole frames (1920 samples); the last takes the sliver left over
+        seen.clear(); tts(rt).encodeVoice(FloatArray(24000 * 16), 30f)
+        assertEquals(listOf(16 * 24000), seen)
+        seen.clear(); tts(rt).encodeVoice(FloatArray(24000 * 20), 30f)
+        assertEquals(listOf(359040, 20 * 24000 - 359040), seen)
     }
 
     @Test fun theBeginOfVoiceMarkerIsPlacedBeforeTheRecordingsEmbeddings() {

@@ -24,7 +24,18 @@ class PocketTts private constructor(
         val limit = (maxSeconds * bundle.sampleRate).toInt()
         val clip = if (samples24k.size > limit) samples24k.copyOf(limit) else samples24k
         require(clip.size >= bundle.samplesPerFrame * 8) { "The recording is too short to copy a voice from" }
-        val data = runtime.encodeVoice(clip)
+        // The encoder's memory use grows with the length of audio it sees at once, so long recordings go through in
+        // pieces (each a whole number of frames) and the embeddings are joined.
+        val piece = SEGMENT_SECONDS * bundle.sampleRate / bundle.samplesPerFrame * bundle.samplesPerFrame
+        val parts = ArrayList<FloatArray>()
+        var at = 0
+        while (at < clip.size) {
+            var end = minOf(at + piece, clip.size)
+            if (clip.size - end < MIN_TAIL_SECONDS * bundle.sampleRate) end = clip.size // a tiny tail is folded into the last piece
+            parts += runtime.encodeVoice(if (at == 0 && end == clip.size) clip else clip.copyOfRange(at, end))
+            at = end
+        }
+        val data = FloatArray(parts.sumOf { it.size }).also { a -> var o = 0; parts.forEach { p -> p.copyInto(a, o); o += p.size } }
         return VoiceEmbedding(data, data.size / bundle.conditioningDim)
     }
 
@@ -51,6 +62,8 @@ class PocketTts private constructor(
 
     companion object {
         const val DEFAULT_MAX_REFERENCE_SECONDS = 15f
+        private const val SEGMENT_SECONDS = 15
+        private const val MIN_TAIL_SECONDS = 2
 
         /** A folder with `bundle.json`, `tokenizer.model`, `bos_before_voice.npy` and the five `.onnx` models. */
         fun load(dir: File, threads: Int): PocketTts {

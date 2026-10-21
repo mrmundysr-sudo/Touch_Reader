@@ -110,6 +110,23 @@ class PocketGoldenTest {
         }
     }
 
+    @Test fun encodingInPiecesMatchesEncodingAtOnce() {
+        val (tts, _, g) = load()
+        tts.use {
+            val ref = readWav16(File(g, "ref.wav"))
+            val n = 24000 * 25
+            val long = FloatArray(n) { i -> ref[i % ref.size] }
+            val whole = it.runtime.encodeVoice(long)
+            val pieces = it.encodeVoice(long, 25f).data
+            assertEquals(whole.size, pieces.size, "frame counts differ")
+            var dot = 0.0; var a = 0.0; var b = 0.0
+            for (i in whole.indices) { dot += whole[i] * pieces[i]; a += whole[i] * whole[i]; b += pieces[i] * pieces[i] }
+            val cos = dot / Math.sqrt(a * b)
+            println("ENCODER_PIECES frames=${whole.size / it.bundle.conditioningDim} cosine=$cos maxdiff=${maxAbs(whole, pieces)}")
+            assertTrue(cos > 0.98, "pieces differ from the whole: cosine $cos")
+        }
+    }
+
     @Test fun textConditionerMatches() {
         val (tts, _, g) = load()
         tts.use {
