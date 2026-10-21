@@ -119,7 +119,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
             item {
                 SectionHeader(
                     "My voices",
-                    "Voices you create from your own recordings. They stay on this phone. To have a book read in one of your voices, install the neural voice and the voice cloning add-on above, then tap “Use to narrate”.",
+                    "Voices you create from your own recordings. They stay on this phone. To have a book read in one of your voices, install the neural voice and the voice cloning add-on above, then tap “Use to narrate”. The result has a similar tone to your recording; it is not an exact copy of the voice.",
                 )
             }
             item {

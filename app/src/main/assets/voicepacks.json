@@ -120,7 +120,7 @@
     {
       "id": "openvoice-converter-v1",
       "name": "Voice cloning add-on",
-      "description": "Lets books be read in the voices you save in Voice Studio. Runs offline.",
+      "description": "Gives the neural narrator a tone similar to a voice you saved in Voice Studio (tone only, not an exact copy). Runs offline.",
       "engine": "openvoice",
       "language": "multi",
       "version": 1,
@@ -131,7 +131,7 @@
         "supertonic-3"
       ],
       "requiresAcceptance": true,
-      "notice": "This add-on changes the voice of Touch Reader's neural narrator to sound like a voice you saved in Voice Studio. It is based on OpenVoice V2 (MIT license, MyShell.ai), converted to ONNX; the license and a modification notice are saved with the files. Only use voices you own or have permission to use, and never use it to impersonate anyone. Audio you share that was made with it must be clearly labelled as computer-generated (this follows the neural voice's license). It needs the neural voice installed first. Everything runs on your phone; recordings and voice fingerprints are never uploaded.",
+      "notice": "This add-on changes the tone of Touch Reader's neural narrator towards a voice you saved in Voice Studio. It changes tone colour only: accent, pace and speaking style stay those of the built-in voice, so the result is similar in tone but is not an exact copy of the person. It is based on OpenVoice V2 (MIT license, MyShell.ai), converted to ONNX; the license and a modification notice are saved with the files. Only use voices you own or have permission to use, and never use it to impersonate anyone. Audio you share that was made with it must be clearly labelled as computer-generated (this follows the neural voice's license). It needs the neural voice installed first. Everything runs on your phone; recordings and voice fingerprints are never uploaded.",
       "files": [
         {
           "path": "LICENSE.txt",

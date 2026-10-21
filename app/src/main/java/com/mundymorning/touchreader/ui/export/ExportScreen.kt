@@ -222,7 +222,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                         }
                         if (custom) {
                             Text(
-                                "Your own voice takes much longer: every sentence is spoken by a built-in voice first and then changed to sound like you.",
+                                "Your own voice takes much longer: every sentence is spoken by a built-in voice first and then its tone is changed towards yours. The result has a similar tone, not an exact copy: accent, pace and style stay those of the built-in voice.",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
                             )
                             OutlinedButton({ scope.launch { matchReport = exporter.checkVoiceMatch(voice) } }, enabled = !status.running) {

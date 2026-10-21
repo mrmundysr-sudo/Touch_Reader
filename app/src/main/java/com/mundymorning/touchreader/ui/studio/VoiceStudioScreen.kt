@@ -150,7 +150,7 @@ fun VoiceStudioScreen(container: AppContainer, onClose: () -> Unit) {
                 }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Saved voices can be renamed and deleted from the Voices tab. Narrating a book in your own voice needs a voice-cloning engine that is not available in this version yet.",
+                    "Saved voices can be renamed and deleted from the Voices tab. To hear a book in a voice like yours, install the neural voice and the voice cloning add-on in the Voices tab. It gives a similar tone, not an exact copy: accent, pace and style stay those of a built-in voice.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
