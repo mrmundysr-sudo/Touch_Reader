@@ -1,5 +1,6 @@
 package com.mundymorning.touchreader.lab
 
+import com.mundymorning.touchreader.core.audio.TimeStretch
 import com.mundymorning.touchreader.core.pockettts.PocketTts
 import com.mundymorning.touchreader.core.voicestudio.Dsp
 import com.mundymorning.touchreader.core.voicestudio.Pcm
@@ -25,6 +26,8 @@ sealed interface LabState {
         /** Which part of the recording the voice was copied from, in seconds from its start. */
         val fromSeconds: Int,
         val referenceSeconds: Double,
+        /** 100 = as the model spoke; lower = slowed down afterwards without changing pitch. */
+        val pacePercent: Int,
     ) : LabState {
         /** Seconds of work per second of speech; below 1.0 a book could be read live on this phone. */
         val rtf: Double get() = speechSeconds / audioSeconds
@@ -89,6 +92,16 @@ class VoiceLab(
 
     val installed: Boolean get() = packs.installedDir(Engines.POCKET_PACK_ID) != null
 
+    /** The part of the recording and the pace last used for this voice (start seconds, pace percent), if any. */
+    fun lastChoice(profileId: String): Pair<Int, Int>? = runCatching {
+        val (a, b) = String(library.engineData(profileId, PREFS, "1")!!).split(",").map { it.trim().toInt() }
+        a to b
+    }.getOrNull()
+
+    private fun savePrefs(profileId: String, startSeconds: Int, pacePercent: Int) {
+        runCatching { library.saveEngineData(profileId, PREFS, "1", "$startSeconds,$pacePercent".toByteArray()) }
+    }
+
     /** Length of a saved recording in seconds, or null if it cannot be read. */
     fun recordingSeconds(profileId: String): Double? =
         runCatching { WavIo.read(library.sampleFile(profileId)!!.readBytes()).seconds }.getOrNull()
@@ -111,7 +124,7 @@ class VoiceLab(
         _state.value = LabState.Idle
     }
 
-    fun make(profileId: String, voiceName: String, startSeconds: Int = 0) {
+    fun make(profileId: String, voiceName: String, startSeconds: Int = 0, pacePercent: Int = 100) {
         if (worker?.isAlive == true) return
         val dir = packs.installedDir(Engines.POCKET_PACK_ID) ?: run { _state.value = LabState.Failed(voiceName, "Install the voice lab download first."); return }
         val file = library.sampleFile(profileId) ?: run { _state.value = LabState.Failed(voiceName, "This voice has no saved recording."); return }
@@ -120,12 +133,13 @@ class VoiceLab(
         player.stop()
         runCatching { traceFile.writeText("") }
         _report.value = null
-        trace("start: seconds $startSeconds to ${startSeconds + REFERENCE_SECONDS}, ${Runtime.getRuntime().availableProcessors()} cores")
+        savePrefs(profileId, startSeconds, pacePercent)
+        trace("start: pace $pacePercent%, seconds $startSeconds to ${startSeconds + REFERENCE_SECONDS}, ${Runtime.getRuntime().availableProcessors()} cores")
         _state.value = LabState.Working(voiceName, "Loading the model...")
-        worker = Thread({ execute(dir, file, profileId, voiceName, startSeconds) }, "tr-voice-lab").apply { isDaemon = true; start() }
+        worker = Thread({ execute(dir, file, profileId, voiceName, startSeconds, pacePercent) }, "tr-voice-lab").apply { isDaemon = true; start() }
     }
 
-    private fun execute(dir: java.io.File, file: java.io.File, profileId: String, voiceName: String, startSeconds: Int) {
+    private fun execute(dir: java.io.File, file: java.io.File, profileId: String, voiceName: String, startSeconds: Int, pacePercent: Int) {
         try {
             val threads = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
             val t0 = System.nanoTime()
@@ -174,10 +188,11 @@ class VoiceLab(
                         out += audio
                     }
                     val all = FloatArray(out.sumOf { it.size }).also { a -> var o = 0; out.forEach { p -> p.copyInto(a, o); o += p.size } }
-                    val pcm = Pcm(tts.bundle.sampleRate, all)
+                    val spoken = Pcm(tts.bundle.sampleRate, all)
+                    val pcm = if (pacePercent >= 100) spoken else Pcm(spoken.sampleRate, TimeStretch.stretch(all, pacePercent / 100.0))
                     sample = pcm
                     trace("DONE")
-                    _state.value = LabState.Done(voiceName, pcm.seconds, work, loadSeconds, voiceSeconds, cached != null, startSeconds, used)
+                    _state.value = LabState.Done(voiceName, spoken.seconds, work, loadSeconds, voiceSeconds, cached != null, startSeconds, used, pacePercent)
                     player.playPcm(PLAY_KEY, pcm)
                 }
             }
@@ -192,6 +207,7 @@ class VoiceLab(
         const val ENGINE = "pocket-tts-onnx"
         const val VERSION = "1"
         const val PLAY_KEY = "voice-lab"
+        const val PREFS = "pocket-lab-prefs"
         /** Longer was tried (30 s sounded worse, 45 s ran the phone out of memory). */
         const val REFERENCE_SECONDS = 15
         val LINES = listOf(
