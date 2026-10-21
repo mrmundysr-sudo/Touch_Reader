@@ -118,63 +118,9 @@
       ]
     },
     {
-      "id": "openvoice-converter-v1",
-      "name": "Voice cloning add-on",
-      "description": "Gives the neural narrator a tone similar to a voice you saved in Voice Studio (tone only, not an exact copy). Runs offline.",
-      "engine": "openvoice",
-      "language": "multi",
-      "version": 1,
-      "license": "MIT (OpenVoice V2, converted to ONNX)",
-      "licenseUrl": "https://github.com/mrmundysr-sudo/Touch_Reader/releases/download/converter-v1/LICENSE.txt",
-      "attribution": "MyShell.ai (OpenVoice)",
-      "requires": [
-        "supertonic-3"
-      ],
-      "requiresAcceptance": true,
-      "notice": "This add-on changes the tone of Touch Reader's neural narrator towards a voice you saved in Voice Studio. It changes tone colour only: accent, pace and speaking style stay those of the built-in voice, so the result is similar in tone but is not an exact copy of the person. It is based on OpenVoice V2 (MIT license, MyShell.ai), converted to ONNX; the license and a modification notice are saved with the files. Only use voices you own or have permission to use, and never use it to impersonate anyone. Audio you share that was made with it must be clearly labelled as computer-generated (this follows the neural voice's license). It needs the neural voice installed first. Everything runs on your phone; recordings and voice fingerprints are never uploaded.",
-      "files": [
-        {
-          "path": "LICENSE.txt",
-          "url": "https://github.com/mrmundysr-sudo/Touch_Reader/releases/download/converter-v1/LICENSE.txt",
-          "sizeBytes": 1057,
-          "sha256": "bb3541f421e6273d3a3e3dd5bdba2bd3b79a3c2eadca65cde9c62c2467903ac0"
-        },
-        {
-          "path": "NOTICE.txt",
-          "url": "https://github.com/mrmundysr-sudo/Touch_Reader/releases/download/converter-v1/NOTICE.txt",
-          "sizeBytes": 628,
-          "sha256": "a99b23ccd2992676c88fbc65b54d35c25d5b1fa9707e0d813e2bd0a613ac0e69"
-        },
-        {
-          "path": "converter_config.json",
-          "url": "https://github.com/mrmundysr-sudo/Touch_Reader/releases/download/converter-v1/converter_config.json",
-          "sizeBytes": 96,
-          "sha256": "430e8bd85bf30356cd74029237932769c36c30c15155b0b9b7742fd60091151b"
-        },
-        {
-          "path": "source_embeddings.json",
-          "url": "https://github.com/mrmundysr-sudo/Touch_Reader/releases/download/converter-v1/source_embeddings.json",
-          "sizeBytes": 53690,
-          "sha256": "24b42dbb2eefd10e4843e87561c7ab89ae55f9f14d8f0f8a8c1c5a736e5c1ea4"
-        },
-        {
-          "path": "se.onnx",
-          "url": "https://github.com/mrmundysr-sudo/Touch_Reader/releases/download/converter-v1/se.onnx",
-          "sizeBytes": 3258344,
-          "sha256": "91a885212adc2abade2b8fcf90bfd073a5a3217ce801e003631c85a15508085a"
-        },
-        {
-          "path": "vc.onnx",
-          "url": "https://github.com/mrmundysr-sudo/Touch_Reader/releases/download/converter-v1/vc.onnx",
-          "sizeBytes": 128055749,
-          "sha256": "0d3d3c4b3527824ce961e1814337d7f0c61f265d3a8a598a45988d5d7f93ff1a"
-        }
-      ]
-    },
-    {
       "id": "pocket-tts-v1",
-      "name": "Voice lab: Pocket TTS (experimental)",
-      "description": "Experimental test of a stronger voice-copying model. Makes a short sample from one of your saved recordings so you can hear how close it gets. Not used for reading yet.",
+      "name": "Voice cloning: Pocket TTS",
+      "description": "Lets books be read, and audiobooks made, in a voice you saved in Voice Studio. The voice is copied from 15 seconds of your recording. Runs offline on this phone.",
       "engine": "pockettts",
       "language": "en",
       "version": 1,
@@ -182,7 +128,7 @@
       "licenseUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/LICENSE",
       "attribution": "Kyutai (Pocket TTS); ONNX export by KevinAHM",
       "requiresAcceptance": true,
-      "notice": "Pocket TTS is made by Kyutai and shared under the CC-BY-4.0 licence (credit: Kyutai; ONNX conversion by KevinAHM on Hugging Face). Kyutai's terms prohibit using it to copy a voice without the explicit, lawful consent of the person, to impersonate anyone, or to mislead people. Only use recordings of your own voice or of people who have given you permission, and clearly label anything you share as computer-generated. This is an experimental lab: it only makes short test samples on this phone, and nothing is uploaded. The files come directly from Hugging Face, not from Touch Reader; the licence is saved with them.",
+      "notice": "Pocket TTS is made by Kyutai and shared under the CC-BY-4.0 licence (credit: Kyutai; ONNX conversion by KevinAHM on Hugging Face). Kyutai's terms prohibit using it to copy a voice without the explicit, lawful consent of the person, to impersonate anyone, or to mislead people. Only use recordings of your own voice or of people who have given you permission, and clearly label anything you share as computer-generated. It runs entirely on this phone: your recordings and voices are never uploaded. The files come directly from Hugging Face, not from Touch Reader; the licence is saved with them.",
       "files": [
         {
           "path": "LICENSE",

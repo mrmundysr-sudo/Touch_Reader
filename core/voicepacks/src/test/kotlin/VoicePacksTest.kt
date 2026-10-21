@@ -278,7 +278,7 @@ class BundledCatalogTest {
     @Test fun shippedCatalogIsValidAndPinned() {
         val r = VoicePackCatalog.parse(asset.readText())
         assertTrue(r.rejected.isEmpty(), "rejected entries: ${r.rejected}")
-        assertEquals(setOf("supertonic-3", "openvoice-converter-v1", "pocket-tts-v1"), r.packs.map { it.id }.toSet())
+        assertEquals(setOf("supertonic-3", "pocket-tts-v1"), r.packs.map { it.id }.toSet())
         val p = r.packs.first { it.id == "supertonic-3" }
         assertEquals(17, p.files.size)
         assertTrue(p.requiresAcceptance && !p.notice.isNullOrBlank())
@@ -290,19 +290,10 @@ class BundledCatalogTest {
         assertTrue(p.sizeBytes in 390_000_000L..410_000_000L, "size ${p.sizeBytes}")
     }
 
-    @Test fun converterPackIsCompleteAndRequiresTheNeuralVoice() {
-        val c = VoicePackCatalog.parse(asset.readText()).packs.first { it.id == "openvoice-converter-v1" }
-        assertEquals(listOf("supertonic-3"), c.requires)
-        assertEquals(setOf("vc.onnx", "se.onnx", "source_embeddings.json", "converter_config.json", "LICENSE.txt", "NOTICE.txt"), c.files.map { it.path }.toSet())
-        assertTrue(c.requiresAcceptance && c.notice!!.contains("impersonate"))
-        assertTrue(c.files.all { it.url.startsWith("https://github.com/") && it.url.contains("/releases/download/converter-v1/") })
-        assertTrue(c.sizeBytes in 125_000_000L..135_000_000L, "size ${c.sizeBytes}")
-    }
-
-    @Test fun pocketLabPackIsPinnedAndCarriesItsConditions() {
+    @Test fun pocketVoiceCloningPackIsPinnedAndCarriesItsConditions() {
         val p = VoicePackCatalog.parse(asset.readText()).packs.first { it.id == "pocket-tts-v1" }
         assertEquals(9, p.files.size)
-        assertTrue(p.requiresAcceptance && p.notice!!.contains("consent") && p.notice!!.contains("CC-BY-4.0") && p.notice!!.contains("Kyutai"))
+        assertTrue(p.requiresAcceptance && p.notice!!.contains("consent") && p.requires.isEmpty() && p.notice!!.contains("CC-BY-4.0") && p.notice!!.contains("Kyutai"))
         assertTrue(p.files.any { it.path == "LICENSE" })
         assertTrue(p.files.all { it.url.startsWith("https://huggingface.co/KevinAHM/") && it.url.contains("58a6d00cf13d239b6748cb0769f35c580a8f606c") })
         assertEquals(setOf("flow_lm_main_int8.onnx", "flow_lm_flow_int8.onnx", "mimi_decoder_int8.onnx", "mimi_encoder.onnx", "text_conditioner.onnx", "bundle.json", "bos_before_voice.npy", "tokenizer.model"),

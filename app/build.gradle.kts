@@ -42,7 +42,6 @@ dependencies {
     implementation(project(":core:audio"))
     implementation(project(":core:supertonic"))
     implementation(project(":core:voicestudio"))
-    implementation(project(":core:voiceconvert"))
     implementation(project(":core:export"))
     implementation(project(":core:pockettts"))
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.23.1")

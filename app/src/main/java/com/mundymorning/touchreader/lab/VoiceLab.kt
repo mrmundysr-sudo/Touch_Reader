@@ -94,14 +94,9 @@ class VoiceLab(
     val installed: Boolean get() = packs.installedDir(Engines.POCKET_PACK_ID) != null
 
     /** The part of the recording and the pace last used for this voice (start seconds, pace percent), if any. */
-    fun lastChoice(profileId: String): Pair<Int, Int>? = runCatching {
-        val (a, b) = String(library.engineData(profileId, PREFS, "1")!!).split(",").map { it.trim().toInt() }
-        a to b
-    }.getOrNull()
+    fun lastChoice(profileId: String): Pair<Int, Int>? = PocketNarrator.choiceOrNull(library, profileId)
 
-    private fun savePrefs(profileId: String, startSeconds: Int, pacePercent: Int) {
-        runCatching { library.saveEngineData(profileId, PREFS, "1", "$startSeconds,$pacePercent".toByteArray()) }
-    }
+    private fun savePrefs(profileId: String, startSeconds: Int, pacePercent: Int) = PocketNarrator.saveChoice(library, profileId, startSeconds, pacePercent)
 
     /** Length of a saved recording in seconds, or null if it cannot be read. */
     fun recordingSeconds(profileId: String): Double? =
@@ -197,7 +192,6 @@ class VoiceLab(
 
     private companion object {
         const val PLAY_KEY = "voice-lab"
-        const val PREFS = "pocket-lab-prefs"
         private const val REFERENCE_SECONDS = PocketNarrator.REFERENCE_SECONDS
         val LINES = listOf(
             "The old lighthouse stood quietly above the harbour while the evening tide came in.",

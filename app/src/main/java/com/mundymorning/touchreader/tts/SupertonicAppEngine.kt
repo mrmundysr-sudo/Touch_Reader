@@ -2,39 +2,51 @@ package com.mundymorning.touchreader.tts
 
 import android.content.Context
 import com.mundymorning.touchreader.core.audio.BufferedSpeechEngine
+import com.mundymorning.touchreader.core.audio.Synthesizer
+import com.mundymorning.touchreader.core.tts.SpeechEngine
 import com.mundymorning.touchreader.core.voicestudio.VoiceProfile
 import com.mundymorning.touchreader.studio.VoiceLibrary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import com.mundymorning.touchreader.core.tts.SpeechEngine
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import java.io.File
 
 /**
- * Offline neural narrator (Supertonic 3, ONNX Runtime). The model loads on a background thread; anything
- * that goes wrong (missing files, out of memory) becomes [EngineStatus.Failed] instead of a crash, and the
- * controller then falls back to the system voice.
+ * Offline neural narrator (ONNX Runtime). Built-in voices are spoken by Supertonic 3; the user's own saved voices by
+ * Pocket TTS (which copies the voice from the saved recording). Only one of the two models is in memory at a time:
+ * changing between a built-in and a saved voice loads the other (a few seconds). Anything that goes wrong (missing
+ * files, out of memory) becomes [EngineStatus.Failed] instead of a crash, and the controller then falls back to the
+ * system voice.
  */
 class SupertonicAppEngine(
     @Suppress("UNUSED_PARAMETER") context: Context,
-    private val packDir: File,
+    /** Folder of the built-in neural voice, or null if it is not installed. */
+    private val packDir: File?,
+    /** Folder of the voice-cloning download (Pocket TTS), or null if it is not installed. */
+    private val pocketDir: File?,
     private val steps: Int,
-    /** Folder of the installed voice-cloning add-on, or null if it is not installed. */
-    private val converterDir: File? = null,
     private val library: VoiceLibrary? = null,
+    initialVoice: String? = null,
 ) : AppEngine {
+    private enum class Kind { BUILT_IN, SAVED }
+
+    /** What the loaded model needs from the engine. */
+    private interface Backend {
+        val synthesizer: Synthesizer
+        fun setVoice(name: String?)
+    }
+
     private val _status = MutableStateFlow<EngineStatus>(EngineStatus.Initializing)
     override val status: StateFlow<EngineStatus> = _status.asStateFlow()
 
-    private val styleNames: List<String> =
-        File(packDir, "voice_styles").listFiles { f -> f.extension == "json" }.orEmpty().map { it.nameWithoutExtension }.sorted()
+    private val styleNames: List<String> = packDir?.let { NeuralVoice.presetNames(it) }.orEmpty()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val presetVoices = styleNames.map { VoiceInfo(it, label(it), "und", "", needsNetwork = false, installed = true) }
@@ -42,9 +54,9 @@ class SupertonicAppEngine(
     private fun customVoices(ps: List<VoiceProfile>) =
         ps.map { VoiceInfo(Engines.CUSTOM_PREFIX + it.id, "★ ${it.name} (your voice)", "und", "", needsNetwork = false, installed = it.hasSample || it.engineData.isNotEmpty()) }
 
-    /** Built-in voices, plus the user's own voices when the cloning add-on is installed. */
+    /** Built-in voices, plus the user's own voices when the voice-cloning download is installed. */
     override val voices: StateFlow<List<VoiceInfo>> =
-        if (converterDir != null && library != null) library.profiles.map { presetVoices + customVoices(it) }
+        if (pocketDir != null && library != null) library.profiles.map { presetVoices + customVoices(it) }
             .stateIn(scope, SharingStarted.Eagerly, presetVoices + customVoices(library.profiles.value))
         else MutableStateFlow(presetVoices).asStateFlow()
     override val engines: StateFlow<List<TtsEngineInfo>> = MutableStateFlow(emptyList<TtsEngineInfo>()).asStateFlow()
@@ -73,13 +85,17 @@ class SupertonicAppEngine(
     private val lock = Any()
     private val pending = ArrayList<Pair<Int, String>>()
     private var buffered: BufferedSpeechEngine? = null
-    private var voice: NeuralVoice? = null
-    @Volatile private var requestedVoice: String? = null
+    private var backend: Backend? = null
+    private var loadedKind: Kind? = null
+    private var loadingKind: Kind? = null
+    @Volatile private var requestedVoice: String? = initialVoice
     @Volatile private var released = false
     @Volatile private var speed = 1f
 
     init {
-        Thread({ load() }, "tr-supertonic-load").apply { isDaemon = true; start() }
+        val first = kindFor(initialVoice)
+        loadingKind = first
+        startLoad(first)
     }
 
     private fun label(name: String): String {
@@ -87,28 +103,68 @@ class SupertonicAppEngine(
         return when (name.firstOrNull()) { 'M' -> "Male voice $n"; 'F' -> "Female voice $n"; else -> name }
     }
 
-    private fun load() {
+    /** A saved voice needs the voice-cloning download; everything else (and any case where only one model is installed) uses what is there. */
+    private fun kindFor(name: String?): Kind {
+        val saved = name?.startsWith(Engines.CUSTOM_PREFIX) == true
+        return when {
+            saved && pocketDir != null -> Kind.SAVED
+            packDir != null -> Kind.BUILT_IN
+            else -> Kind.SAVED
+        }
+    }
+
+    private fun startLoad(kind: Kind) {
+        Thread({ load(kind) }, "tr-neural-load").apply { isDaemon = true; start() }
+    }
+
+    private fun load(kind: Kind) {
         try {
             val loadStart = System.nanoTime()
-            val nv = NeuralVoice.load(packDir, converterDir, library, steps, requestedVoice) { m -> if (!released) _activity.value = m }
-            val b = BufferedSpeechEngine(nv.synthesizer, AudioTrackSink())
+            _activity.value = if (kind == Kind.SAVED) "Loading your voice..." else "Loading the neural voice..."
+            val voiceNow = requestedVoice
+            val be: Backend = when (kind) {
+                Kind.BUILT_IN -> {
+                    val nv = NeuralVoice.load(packDir!!, steps, voiceNow)
+                    object : Backend {
+                        override val synthesizer: Synthesizer = nv.synthesizer
+                        override fun setVoice(name: String?) = nv.setVoice(name)
+                    }
+                }
+                Kind.SAVED -> {
+                    val live = PocketLive.load(pocketDir!!, library ?: error("No voice library"), voiceNow)
+                    object : Backend {
+                        override val synthesizer: Synthesizer = live.synthesizer
+                        override fun setVoice(name: String?) = live.setVoice(name)
+                    }
+                }
+            }
+            val b = BufferedSpeechEngine(be.synthesizer, AudioTrackSink())
             b.listener = forwarder
             b.onSlow = { rtf -> onSlow?.invoke(rtf) }
             b.onSpeedKnown = { rtf -> onSpeedKnown?.invoke(rtf) }
             b.setSpeed(speed)
             val queued: List<Pair<Int, String>>
+            var reload: Kind? = null
             synchronized(lock) {
                 if (released) { b.release(); return }
-                voice = nv; buffered = b
-                queued = pending.toList(); pending.clear()
-                _status.value = EngineStatus.Ready
-                _activity.value = "Neural voice loaded in ${"%.1f".format((System.nanoTime() - loadStart) / 1e9)} s" +
-                    (if (converterDir != null) " (voice cloning add-on installed)" else "")
+                val wanted = kindFor(requestedVoice)
+                if (wanted != kind) {
+                    // the narrator was changed to the other kind while this one was loading
+                    reload = wanted; loadingKind = wanted
+                    queued = emptyList()
+                } else {
+                    backend = be; buffered = b; loadedKind = kind; loadingKind = null
+                    queued = pending.toList(); pending.clear()
+                    _status.value = EngineStatus.Ready
+                    _activity.value = (if (kind == Kind.SAVED) "Your voice" else "Neural voice") + " loaded in ${"%.1f".format((System.nanoTime() - loadStart) / 1e9)} s"
+                }
             }
-            nv.setVoice(requestedVoice) // the narrator may have been changed while the model was loading
+            reload?.let { b.release(); startLoad(it); return }
+            be.setVoice(requestedVoice) // the narrator may have been changed while the model was loading
             queued.forEach { (id, text) -> b.enqueue(id, text) }
         } catch (t: Throwable) {
             val msg = if (t is OutOfMemoryError) "Not enough memory to load the neural voice." else "The neural voice could not start (${t.javaClass.simpleName})."
+            synchronized(lock) { loadingKind = null }
             _status.value = EngineStatus.Failed(msg)
             _activity.value = msg
             val queued = synchronized(lock) { pending.toList().also { pending.clear() } }
@@ -135,7 +191,21 @@ class SupertonicAppEngine(
 
     override fun setVoice(name: String?) {
         requestedVoice = name
-        voice?.setVoice(name)
+        val want = kindFor(name)
+        var drop: BufferedSpeechEngine? = null
+        var load = false
+        synchronized(lock) {
+            if (released) return
+            if (loadedKind != null && loadedKind != want) {
+                // the other model is needed: free this one first (two do not fit in memory on small phones)
+                drop = buffered; buffered = null; backend = null; loadedKind = null
+                loadingKind = want; load = true
+                _status.value = EngineStatus.Initializing
+                _activity.value = if (want == Kind.SAVED) "Loading your voice..." else "Loading the neural voice..."
+            }
+        }
+        drop?.release()
+        if (load) startLoad(want) else backend?.setVoice(name)
     }
 
     /** Times a few sentences with the current narrator; blocks, so call it from a worker thread. */
@@ -154,8 +224,9 @@ class SupertonicAppEngine(
     }
 
     override fun release() {
-        synchronized(lock) { released = true; pending.clear() }
-        buffered?.release()
+        val b: BufferedSpeechEngine?
+        synchronized(lock) { released = true; pending.clear(); b = buffered; buffered = null }
+        b?.release()
         scope.cancel()
     }
 

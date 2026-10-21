@@ -22,7 +22,6 @@ interface AppEngine : SpeechEngine {
 object Engines {
     const val NEURAL = "supertonic"
     const val NEURAL_PACK_ID = "supertonic-3"
-    const val CONVERTER_PACK_ID = "openvoice-converter-v1"
     const val POCKET_PACK_ID = "pocket-tts-v1"
     /** Voice names for the user's own voices are "custom:<profile id>". */
     const val CUSTOM_PREFIX = "custom:"

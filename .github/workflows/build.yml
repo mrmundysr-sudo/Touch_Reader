@@ -10,10 +10,6 @@ on:
         description: "Also publish the debug APK as a GitHub pre-release asset"
         type: boolean
         default: false
-      bundle_converter:
-        description: "Test build only: package the voice-cloning converter inside the APK (adds ~130 MB)"
-        type: boolean
-        default: false
 
 concurrency:
   group: build-${{ github.ref }}-${{ github.event_name }}
@@ -35,15 +31,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests (core modules)
         run: ./gradlew -PjvmOnly=true test --stacktrace
-      - name: Bundle the voice-cloning converter into this test build
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_converter }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p app/src/main/assets/bundled/openvoice-converter-v1
-          gh release download converter-v1 --dir app/src/main/assets/bundled/openvoice-converter-v1 \
-            --pattern vc.onnx --pattern se.onnx --pattern source_embeddings.json --pattern converter_config.json --pattern LICENSE.txt --pattern NOTICE.txt
-          python3 scripts/check_bundle.py openvoice-converter-v1
       - name: Build debug APK
         run: |
           set -o pipefail

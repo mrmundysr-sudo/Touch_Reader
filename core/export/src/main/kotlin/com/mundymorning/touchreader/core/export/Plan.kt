@@ -14,7 +14,7 @@ data class ExportSettings(
     /** Speak each chapter's title before its text. */
     val announceChapters: Boolean = true,
     val speed: Float = 1f,
-    /** How a saved voice is made: [CLONE_OPENVOICE] (built-in voice with its tone changed) or [CLONE_POCKET] (copies the voice). Fixed for the whole book. */
+    /** How a saved voice was made: [CLONE_POCKET] (copies the voice) or [CLONE_OPENVOICE] (the older method, since removed: only read from audiobooks started before). Fixed for the whole book. */
     val cloneEngine: String = CLONE_OPENVOICE,
     /** Pocket voices: which 15 seconds of the saved recording the voice is copied from (start, in seconds). */
     val refStartSeconds: Int = 0,

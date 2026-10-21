@@ -29,6 +29,7 @@ import com.mundymorning.touchreader.export.ExportPhase
 import com.mundymorning.touchreader.export.formatDuration
 import com.mundymorning.touchreader.tts.Engines
 import com.mundymorning.touchreader.tts.NeuralVoice
+import com.mundymorning.touchreader.tts.PocketNarrator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,11 +73,11 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmRestart by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    var matchReport by remember { mutableStateOf<String?>(null) }
+    var pace by rememberSaveable { mutableStateOf(100) }
 
     val neuralDir = remember(status.phase) { container.voicePacks.installedDir(Engines.NEURAL_PACK_ID) }
-    val converterInstalled = remember(status.phase) { container.voicePacks.installedDir(Engines.CONVERTER_PACK_ID) != null }
     val pocketInstalled = remember(status.phase) { container.voicePacks.installedDir(Engines.POCKET_PACK_ID) != null }
+    val voiceReady = neuralDir != null || (pocketInstalled && profiles.isNotEmpty())
     val presets = remember(neuralDir) { neuralDir?.let { NeuralVoice.presetNames(it) }.orEmpty() }
 
     LaunchedEffect(docId) {
@@ -84,6 +85,14 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
         book = b
         title = container.db.documents().get(docId)?.title.orEmpty()
         if (b != null && selected.isEmpty()) selected = b.chapters.indices.toSet()
+    }
+    // the pace is remembered per saved voice (the same setting the reader uses)
+    LaunchedEffect(voice) {
+        if (voice.startsWith(Engines.CUSTOM_PREFIX)) pace = PocketNarrator.choice(container.voiceLibrary, voice.removePrefix(Engines.CUSTOM_PREFIX)).second
+    }
+    // with only the voice-cloning download installed there are no built-in voices to start from
+    LaunchedEffect(neuralDir, profiles) {
+        if (neuralDir == null && !voice.startsWith(Engines.CUSTOM_PREFIX)) profiles.firstOrNull()?.let { voice = Engines.CUSTOM_PREFIX + it.id }
     }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); message = null } }
 
@@ -113,15 +122,13 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
         }
     }
 
-    /** The settings for a new audiobook: a saved voice is copied by Pocket TTS when that download is installed (using the part and pace last chosen in the voice lab), otherwise toned by the older converter. */
+    /** The settings for a new audiobook. A saved voice is copied by Pocket TTS from the part of the recording last chosen in the voice preview, at the pace chosen here. */
     fun newSettings(chapters: List<Int>): ExportSettings {
         val customVoice = voice.startsWith(Engines.CUSTOM_PREFIX)
-        val pocketVoice = customVoice && pocketInstalled
-        val last = if (pocketVoice) container.voiceLab.lastChoice(voice.removePrefix(Engines.CUSTOM_PREFIX)) else null
+        val start = if (customVoice) PocketNarrator.choice(container.voiceLibrary, voice.removePrefix(Engines.CUSTOM_PREFIX)).first else 0
         return ExportSettings(
             voice, steps, kbps, chapters, announceChapters = true,
-            cloneEngine = if (pocketVoice) ExportSettings.CLONE_POCKET else ExportSettings.CLONE_OPENVOICE,
-            refStartSeconds = last?.first ?: 0, pacePercent = last?.second ?: 100,
+            cloneEngine = ExportSettings.CLONE_POCKET, refStartSeconds = start, pacePercent = if (customVoice) pace else 100,
         )
     }
 
@@ -143,8 +150,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
     val editing = m == null || startingOver
     val active = if (editing) newSettings(selected.sorted()) else m!!.settings
     val custom = active.voice.startsWith(Engines.CUSTOM_PREFIX)
-    val pocketActive = custom && active.cloneEngine == ExportSettings.CLONE_POCKET
-    val engineKind = if (pocketActive) ExportEstimator.ENGINE_POCKET else ExportEstimator.ENGINE_SUPERTONIC
+    val engineKind = if (custom) ExportEstimator.ENGINE_POCKET else ExportEstimator.ENGINE_SUPERTONIC
     val busyElsewhere = status.running && status.phase != ExportPhase.TESTING && status.docId != docId
     val rendering = status.running && status.docId == docId
 
@@ -162,10 +168,10 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
         LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Text(title, style = MaterialTheme.typography.titleLarge) }
 
-            if (neuralDir == null) item {
+            if (!voiceReady) item {
                 Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("The neural voice is not installed", fontWeight = FontWeight.Bold)
-                    Text("Audiobooks are made with the neural voice (and your own voice, if you add the cloning add-on). Install it from the Voices tab first.")
+                    Text("No voice is installed", fontWeight = FontWeight.Bold)
+                    Text("Audiobooks are made with the built-in neural voice, or with your own saved voice using the Voice cloning download. Install one from the Voices tab first (and, for your own voice, record it in Create a voice).")
                     Button(onOpenVoices) { Text("Open Voices") }
                 } }
             }
@@ -202,7 +208,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                     status.message.takeIf { status.docId == docId }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (rendering) OutlinedButton({ exporter.requestStop() }) { Icon(Icons.Rounded.Stop, null); Spacer(Modifier.width(6.dp)); Text("Stop") }
-                        else if (finalFile == null && doneCount < total) Button({ requestStart() }, enabled = !busyElsewhere && neuralDir != null) {
+                        else if (finalFile == null && doneCount < total) Button({ requestStart() }, enabled = !busyElsewhere && voiceReady) {
                             Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text(if (doneCount == 0) "Start" else "Continue")
                         }
                         if (finalFile != null) Button({ saver.launch("${title.ifBlank { "audiobook" }.replace(Regex("[^A-Za-z0-9 _-]"), "_")}.m4b") }) { Icon(Icons.Rounded.Save, null); Spacer(Modifier.width(6.dp)); Text("Save file") }
@@ -218,7 +224,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
             if (busyElsewhere) item { Text("Another audiobook is being made right now. Wait for it, or stop it from its own screen.", color = MaterialTheme.colorScheme.error) }
 
             // choices for a new audiobook
-            if (editing && neuralDir != null) {
+            if (editing && voiceReady) {
                 item {
                     Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Voice", fontWeight = FontWeight.Bold)
@@ -230,31 +236,30 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                             }
                             DropdownMenu(open, { open = false }) {
                                 presets.forEach { p -> DropdownMenuItem({ Text(voiceLabel(p)) }, { voice = p; open = false }) }
-                                if (converterInstalled || pocketInstalled) profiles.forEach { pr ->
+                                if (pocketInstalled) profiles.forEach { pr ->
                                     DropdownMenuItem({ Text("★ ${pr.name} (your voice) — takes longer") }, { voice = Engines.CUSTOM_PREFIX + pr.id; open = false })
                                 }
                             }
                         }
                         if (custom) {
-                            if (pocketActive) {
-                                val last = container.voiceLab.lastChoice(voice.removePrefix(Engines.CUSTOM_PREFIX))
-                                Text(
-                                    "Your own voice is copied from your saved recording (15 seconds starting at ${last?.first ?: 0} s, pace ${last?.second ?: 100}%: the choices last made in the voice lab on the Voices tab). " +
-                                        "It takes much longer than a built-in voice, and this phone needs to be timed to know how long.",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
-                                )
-                            } else {
-                                Text(
-                                    "Your own voice takes much longer: every sentence is spoken by a built-in voice first and then its tone is changed towards yours. The result has a similar tone, not an exact copy: accent, pace and style stay those of the built-in voice. For a closer copy, install the voice lab download in the Voices tab.",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
-                                )
-                                OutlinedButton({ scope.launch { matchReport = exporter.checkVoiceMatch(voice) } }, enabled = !status.running) {
-                                    Text("Check how close this voice is (a minute or two)")
+                            Text(
+                                "Your own voice is copied from your saved recording (15 seconds starting at ${PocketNarrator.choice(container.voiceLibrary, voice.removePrefix(Engines.CUSTOM_PREFIX)).first} s: change the part in Voices > Voice preview). " +
+                                    "It takes much longer than a built-in voice, and this phone needs to be timed to know how long.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
+                            )
+                            Text("Pace", fontWeight = FontWeight.Bold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(100, 95, 90, 85, 80).forEach { pc ->
+                                    FilterChip(pace == pc, {
+                                        pace = pc
+                                        val id = voice.removePrefix(Engines.CUSTOM_PREFIX)
+                                        PocketNarrator.saveChoice(container.voiceLibrary, id, PocketNarrator.choice(container.voiceLibrary, id).first, pc)
+                                    }, { Text("$pc%") })
                                 }
-                                matchReport?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                             }
+                            Text("Slows the voice down without changing its pitch. 100% is as the model speaks; 80% is the slowest, and below that it can start to sound smeared. The same setting is used when reading live.", style = MaterialTheme.typography.bodySmall)
                         }
-                        if (!converterInstalled && !pocketInstalled && profiles.isNotEmpty()) Text("To use your own voice, install the voice lab download (or the Voice cloning add-on) in the Voices tab.", style = MaterialTheme.typography.bodySmall)
+                        if (!pocketInstalled && profiles.isNotEmpty()) Text("To use your own voice, install the Voice cloning download in the Voices tab.", style = MaterialTheme.typography.bodySmall)
 
                         Text("Speed or quality", fontWeight = FontWeight.Bold)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -263,8 +268,8 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                         }
                         Text(
                             when {
-                                pocketActive && steps == 4 -> "Faster. Better quality adds one extra step per sound frame; it has not yet been compared by ear."
-                                pocketActive -> "Slightly slower (about 15% more work is assumed until timed). Not yet compared by ear against Faster."
+                                custom && steps == 4 -> "Faster. Better quality adds one extra step per sound frame; it has not yet been compared by ear."
+                                custom -> "Slightly slower (about 15% more work is assumed until timed). Not yet compared by ear against Faster."
                                 steps == 4 -> "About twice as fast. The voice is slightly less polished."
                                 else -> "Slower, with the best sound this voice can make."
                             },

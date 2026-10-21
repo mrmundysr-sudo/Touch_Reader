@@ -28,6 +28,20 @@ class PocketNarrator private constructor(
         /** How much of the recording the voice is copied from. Longer was tried: 30 s sounded worse, 45 s ran a phone out of memory. */
         const val REFERENCE_SECONDS = 15
 
+        private const val PREFS = "pocket-lab-prefs"
+
+        /** The part of the recording (start, in seconds) and the pace (percent) last chosen for a saved voice, or null if never chosen. */
+        fun choiceOrNull(library: VoiceLibrary, profileId: String): Pair<Int, Int>? = runCatching {
+            val (a, b) = String(library.engineData(profileId, PREFS, "1")!!).split(",").map { it.trim().toInt() }
+            a to b.coerceIn(80, 100)
+        }.getOrNull()
+
+        fun choice(library: VoiceLibrary, profileId: String): Pair<Int, Int> = choiceOrNull(library, profileId) ?: (0 to 100)
+
+        fun saveChoice(library: VoiceLibrary, profileId: String, startSeconds: Int, pacePercent: Int) {
+            runCatching { library.saveEngineData(profileId, PREFS, "1", "$startSeconds,${pacePercent.coerceIn(80, 100)}".toByteArray()) }
+        }
+
         fun threads() = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
 
         private fun version(startSeconds: Int) = "1-${REFERENCE_SECONDS}s-from${startSeconds}s" // a different part is a different voice fingerprint
@@ -52,6 +66,10 @@ class PocketNarrator private constructor(
 
         /** [lsdSteps]: 1 is faster, 2 is the "better quality" setting. [pace]: 1.0 as spoken, lower = slower. */
         fun load(dir: File, library: VoiceLibrary, profileId: String, startSeconds: Int, lsdSteps: Int, pace: Double): PocketNarrator {
+            return load(dir, library, profileId, startSeconds, lsdSteps) { pace }
+        }
+
+        fun load(dir: File, library: VoiceLibrary, profileId: String, startSeconds: Int, lsdSteps: Int, pace: () -> Double): PocketNarrator {
             val tts = PocketTts.load(dir, threads())
             try {
                 val (embedding, _) = embeddingFor(tts, library, profileId, startSeconds)

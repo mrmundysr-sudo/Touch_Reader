@@ -69,7 +69,6 @@ class ExportController(
     fun storeFor(docId: Long, forWriting: Boolean = false) = ExportStore(root(docId), cleanTemp = forWriting)
 
     val neuralInstalled: Boolean get() = packs.installedDir(Engines.NEURAL_PACK_ID) != null
-    val converterInstalled: Boolean get() = packs.installedDir(Engines.CONVERTER_PACK_ID) != null
     val pocketInstalled: Boolean get() = packs.installedDir(Engines.POCKET_PACK_ID) != null
 
     suspend fun loadBook(docId: Long): ReaderBook? = withContext(Dispatchers.IO) {
@@ -124,7 +123,10 @@ class ExportController(
             val plan = ExportPlanner.plan(book, s)
             if (plan.isEmpty()) return publish(ExportStatus(docId, title, ExportPhase.FAILED, message = "Nothing to render: the chosen chapters have no text."))
             val custom = s.voice.startsWith(Engines.CUSTOM_PREFIX)
-            val pocket = custom && s.cloneEngine == ExportSettings.CLONE_POCKET
+            if (custom && s.cloneEngine != ExportSettings.CLONE_POCKET) {
+                return publish(ExportStatus(docId, title, ExportPhase.FAILED, message = "This audiobook was started with the older voice method, which has been replaced. Choose Start over to make it again in the new voice."))
+            }
+            val pocket = custom
             val packDir = packs.installedDir(Engines.NEURAL_PACK_ID)
             if (!pocket && packDir == null) return publish(ExportStatus(docId, title, ExportPhase.FAILED, message = "The neural voice is not installed. Install it in the Voices tab."))
             val pocketDir = if (pocket) packs.installedDir(Engines.POCKET_PACK_ID) else null
@@ -142,7 +144,7 @@ class ExportController(
                     narrator = n
                     engine = ExportEngine(book, plan, s, store, n.synthesizer, AacEncoder())
                 } else {
-                    val v = NeuralVoice.load(packDir!!, if (custom) packs.installedDir(Engines.CONVERTER_PACK_ID) else null, library, s.steps, s.voice)
+                    val v = NeuralVoice.load(packDir!!, s.steps, s.voice)
                     voice = v
                     engine = ExportEngine(book, plan, s, store, v.synthesizer, AacEncoder())
                 }
@@ -174,40 +176,8 @@ class ExportController(
         }
     }
 
-    /** Measures how closely a saved voice matches its recording. Returns a readable report (or the reason it could not be done). */
-    suspend fun checkVoiceMatch(voiceName: String): String {
-        if (_status.value.running) return "Wait for the audiobook that is being made."
-        val packDir = packs.installedDir(Engines.NEURAL_PACK_ID) ?: return "Install the neural voice first."
-        val convDir = packs.installedDir(Engines.CONVERTER_PACK_ID) ?: return "Install the Voice cloning add-on first."
-        _status.value = ExportStatus(phase = ExportPhase.TESTING, message = "Comparing the voice with the recording. This takes a minute or two...")
-        playback.neuralBlocked = true
-        return try {
-            withContext(Dispatchers.Default) {
-                withContext(Dispatchers.Main.immediate) { playback.releaseForExport() }
-                val v = NeuralVoice.load(packDir, convDir, library, 4, voiceName)
-                try {
-                    v.synthesizer.synthesize(TEST_SENTENCES[0], 1f) { false } // warm-up; also prepares the voice fingerprint
-                    val r = v.checkMatch(voiceName, TEST_SENTENCES[1])
-                    if (r == null) "The check could not run for this voice."
-                    else buildString {
-                        appendLine("Starting from built-in voice ${r.basePreset}.")
-                        appendLine("Recording vs that built-in voice: %.2f".format(r.recordingVsBase))
-                        appendLine("Built-in voice speaking: %.2f".format(r.baseOutput))
-                        r.converted.forEach { (a, c) -> appendLine("Your voice, strength %.1f: %.2f".format(a, c)) }
-                        append("1.00 means identical. The same method reached about 0.80 on clean test voices.")
-                    }
-                } finally { v.release() }
-            }
-        } catch (t: Throwable) {
-            if (t is OutOfMemoryError) "Not enough memory for this check." else "The check failed (${t.javaClass.simpleName})."
-        } finally {
-            withContext(Dispatchers.Main.immediate) { playback.unblockNeural() }
-            _status.value = ExportStatus()
-        }
-    }
-
     /** Times this phone with a voice and remembers the result (used for the time estimates). */
-    suspend fun testSpeed(voiceName: String, steps: Int, cloneEngine: String = ExportSettings.CLONE_OPENVOICE, refStartSeconds: Int = 0): String? {
+    suspend fun testSpeed(voiceName: String, steps: Int, cloneEngine: String = ExportSettings.CLONE_POCKET, refStartSeconds: Int = 0): String? {
         if (_status.value.running) return "Wait for the audiobook that is being made."
         val custom = voiceName.startsWith(Engines.CUSTOM_PREFIX)
         val pocket = custom && cloneEngine == ExportSettings.CLONE_POCKET
@@ -235,7 +205,7 @@ class ExportController(
                         measure(n.synthesizer)?.let { settings.recordSpeed(ExportEstimator.Measurement(steps, true, it, ExportEstimator.ENGINE_POCKET)) }
                     }
                 } else {
-                    val v = NeuralVoice.load(packDir!!, if (custom) packs.installedDir(Engines.CONVERTER_PACK_ID) else null, library, steps, voiceName)
+                    val v = NeuralVoice.load(packDir!!, steps, voiceName)
                     try {
                         measure(v.synthesizer)?.let { settings.recordSpeed(ExportEstimator.Measurement(steps, custom, it)) }
                     } finally { v.release() }

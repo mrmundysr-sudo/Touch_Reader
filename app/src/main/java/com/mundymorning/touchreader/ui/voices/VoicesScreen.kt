@@ -52,7 +52,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
     val playingSample by container.samplePlayer.playingKey.collectAsState()
     var renameVoice by remember { mutableStateOf<VoiceProfile?>(null) }
     var needsAddon by remember { mutableStateOf(false) }
-    val cloneReady = packStates[Engines.NEURAL_PACK_ID] is PackState.Installed && packStates[Engines.CONVERTER_PACK_ID] is PackState.Installed
+    val cloneReady = packStates[Engines.POCKET_PACK_ID] is PackState.Installed
     var deleteVoice by remember { mutableStateOf<VoiceProfile?>(null) }
     val voiceScope = rememberCoroutineScope()
     DisposableEffect(Unit) { onDispose { container.samplePlayer.stop() } }
@@ -117,7 +117,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                 PackRow(p, packStates[p.id] ?: PackState.Available, bundled = container.voicePacks.isBundled(p), missingRequirement = missing.firstOrNull(),
                     onDownload = { accepted = false; confirmPack = p }, onCancel = { container.voicePacks.cancel(p.id) },
                     onDelete = {
-                        if (p.id == Engines.NEURAL_PACK_ID && chosenEngine == Engines.NEURAL) controller.switchEngine(null)
+                        if ((p.id == Engines.NEURAL_PACK_ID || p.id == Engines.POCKET_PACK_ID) && chosenEngine == Engines.NEURAL) controller.switchEngine(null)
                         container.voicePacks.delete(p.id)
                     })
             }
@@ -125,7 +125,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
             item {
                 SectionHeader(
                     "My voices",
-                    "Voices you create from your own recordings. They stay on this phone. To have a book read in one of your voices, install the neural voice and the voice cloning add-on above, then tap “Use to narrate”. The result has a similar tone to your recording; it is not an exact copy of the voice.",
+                    "Voices you create from your own recordings. They stay on this phone. To have a book read in one of your voices, install the Voice cloning download above, then tap “Use to narrate”. The voice is copied from 15 seconds of your recording: use “Voice preview” to pick the cleanest part and the pace. Use it only for voices you own or have permission to use.",
                 )
             }
             item {
@@ -169,7 +169,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                     },
                 )
                 if (labReady && container.voiceLibrary.sampleFile(v.id) != null) {
-                    TextButton({ val last = container.voiceLab.lastChoice(v.id); labStart = last?.first ?: 0; labPace = last?.second ?: 100; labPick = v }, Modifier.padding(start = 16.dp)) { Text("Try in voice lab (experimental)") }
+                    TextButton({ val last = container.voiceLab.lastChoice(v.id); labStart = last?.first ?: 0; labPace = last?.second ?: 100; labPick = v }, Modifier.padding(start = 16.dp)) { Text("Voice preview: choose part and pace") }
                 }
               }
             }
@@ -209,7 +209,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
         val st = lab
         AlertDialog(
             onDismissRequest = { if (st !is com.mundymorning.touchreader.lab.LabState.Working) container.voiceLab.close() },
-            title = { Text("Voice lab: ${when (st) { is com.mundymorning.touchreader.lab.LabState.Working -> st.voiceName; is com.mundymorning.touchreader.lab.LabState.Done -> st.voiceName; is com.mundymorning.touchreader.lab.LabState.Failed -> st.voiceName; else -> "" }}") },
+            title = { Text("Voice preview: ${when (st) { is com.mundymorning.touchreader.lab.LabState.Working -> st.voiceName; is com.mundymorning.touchreader.lab.LabState.Done -> st.voiceName; is com.mundymorning.touchreader.lab.LabState.Failed -> st.voiceName; else -> "" }}") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     when (st) {
@@ -248,7 +248,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
         DisposableEffect(v.id) { onDispose { container.samplePlayer.stop() } }
         AlertDialog(
             onDismissRequest = { container.samplePlayer.stop(); labPick = null },
-            title = { Text("Voice lab: ${v.name}") },
+            title = { Text("Voice preview: ${v.name}") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("The voice is copied from 15 seconds of your saved recording (longer sounded worse, and 45 seconds runs phones out of memory). Pick the cleanest part: clear speech, no noise, no music, one speaker. Tap Listen to hear a part.", style = MaterialTheme.typography.bodySmall)
@@ -285,7 +285,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
         AlertDialog(
             onDismissRequest = { needsAddon = false },
             title = { Text("Two downloads needed") },
-            text = { Text("To have books read in your own voice, install both items under “Downloaded offline voices” above: the neural voice (about 400 MB) and the voice cloning add-on (about 130 MB). Both run fully on your phone.") },
+            text = { Text("To have books read in your own voice, install “Voice cloning: Pocket TTS” under “Downloaded offline voices” above (about 165 MB). It runs fully on your phone.") },
             confirmButton = { TextButton({ needsAddon = false }) { Text("OK") } },
         )
     }

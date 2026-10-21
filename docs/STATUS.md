@@ -116,7 +116,11 @@ Not done / limits:
 
 The Voices tab lists the optional downloads (neural voice, voice cloning add-on) with their size, licence and what they need first.
 
-## Voice lab (experimental, Pocket TTS)
+## Voice cloning (Pocket TTS) - replaced the OpenVoice add-on
+
+Converted fully on the user's say-so ("it's much better than what we tried before"): saved voices are now made only by Pocket TTS, for live reading, audiobook export and the voice preview. The OpenVoice tone-converter add-on, its pack, module (`core/voiceconvert`), CI workflow and the "check how close" tool were removed. Audiobooks started with the old method can no longer be continued (the app says so; Start over remakes them). Built-in voices are still Supertonic 3. Only one of the two models is loaded at a time, so switching between a built-in and a saved voice while reading takes a few seconds. Pace (80-100% in 5% steps, pitch-preserving time-stretch) is stored per saved voice and used by live reading (Playback speed sheet), the audiobook screen and the preview. The reader's playback speed also goes through the same time-stretch for saved voices. Not yet run on a phone: live reading in a saved voice (speed on the OnePlus and TCL, the model switching), pace in live reading, the removal of the old add-on on an upgraded install.
+
+### History: the voice lab
 
 Why: OpenVoice conversion only gets the tone colour (voice-match 0.87 but judged "nothing like" the person by the user). Pocket TTS (Kyutai, about 100M parameters) clones from a recording directly.
 

@@ -22,6 +22,7 @@ import com.mundymorning.touchreader.data.Settings
 import com.mundymorning.touchreader.tts.AndroidTtsEngine
 import com.mundymorning.touchreader.tts.AppEngine
 import com.mundymorning.touchreader.tts.Engines
+import com.mundymorning.touchreader.tts.PocketNarrator
 import com.mundymorning.touchreader.tts.SupertonicAppEngine
 import com.mundymorning.touchreader.voices.VoicePackManager
 import com.mundymorning.touchreader.tts.EngineStatus
@@ -80,9 +81,10 @@ class PlaybackController(
     private fun createEngine(): AppEngine {
         if (settings.ttsEngine.value == Engines.NEURAL && !neuralBlocked) {
             val dir = packs.installedDir(Engines.NEURAL_PACK_ID)
-            if (dir != null) {
+            val pocketDir = packs.installedDir(Engines.POCKET_PACK_ID)
+            if (dir != null || pocketDir != null) {
                 val steps = settings.neuralSteps.value
-                return SupertonicAppEngine(app, dir, steps, packs.installedDir(Engines.CONVERTER_PACK_ID), voiceLibrary).also { e ->
+                return SupertonicAppEngine(app, dir, pocketDir, steps, voiceLibrary, settings.defaultVoice.value).also { e ->
                     // both callbacks run on the synthesis thread
                     e.onSlow = { rtf -> scope.launch { learnSpeed(steps, rtf) } }
                     e.onSpeedKnown = { rtf -> scope.launch { learnSpeed(steps, rtf) } }
@@ -115,15 +117,17 @@ class PlaybackController(
     /** Remembers how fast this phone is with the current voice; if it cannot keep up with real time, tells the reader screen. */
     private fun learnSpeed(steps: Int, rtf: Double) {
         val custom = usingCustomVoice()
-        settings.recordSpeed(ExportEstimator.Measurement(steps, custom, rtf))
-        if (SpeedClass.classify(rtf) == LiveSpeed.TOO_SLOW && !settings.speedAdviceDismissed(steps, custom) && _ui.value.speedAdvice == null) {
+        // saved voices are spoken by a different model, timed at its "Faster" setting (4)
+        val key = if (custom) 4 else steps
+        settings.recordSpeed(ExportEstimator.Measurement(key, custom, rtf, if (custom) ExportEstimator.ENGINE_POCKET else ExportEstimator.ENGINE_SUPERTONIC))
+        if (SpeedClass.classify(rtf) == LiveSpeed.TOO_SLOW && !settings.speedAdviceDismissed(key, custom) && _ui.value.speedAdvice == null) {
             _ui.update { it.copy(speedAdvice = SpeedAdvice(rtf, custom)) }
         }
     }
 
     /** [forever]: do not offer an audiobook again for this voice setting (the Export screen stays available). */
     fun dismissSpeedAdvice(forever: Boolean) {
-        _ui.value.speedAdvice?.let { if (forever) settings.dismissSpeedAdvice(settings.neuralSteps.value, it.custom) }
+        _ui.value.speedAdvice?.let { if (forever) settings.dismissSpeedAdvice(if (it.custom) 4 else settings.neuralSteps.value, it.custom) }
         _ui.update { it.copy(speedAdvice = null) }
     }
 
@@ -287,6 +291,22 @@ class PlaybackController(
         _ui.update { it.copy(speed = speed) }
         session?.restartCurrent()
         scope.launch(Dispatchers.IO) { db.documents().setSpeed(id, speed) }
+    }
+
+    /** The pace (80-100%) of the current narrator if it is a saved voice, else null. */
+    fun voicePace(): Int? {
+        val name = _ui.value.voiceName ?: settings.defaultVoice.value ?: return null
+        if (!name.startsWith(Engines.CUSTOM_PREFIX)) return null
+        return PocketNarrator.choice(voiceLibrary, name.removePrefix(Engines.CUSTOM_PREFIX)).second
+    }
+
+    /** Slows the saved voice down (80-100%) without changing its pitch; applies from the sentence being made. */
+    fun setVoicePace(percent: Int) {
+        val name = _ui.value.voiceName ?: settings.defaultVoice.value ?: return
+        if (!name.startsWith(Engines.CUSTOM_PREFIX)) return
+        val id = name.removePrefix(Engines.CUSTOM_PREFIX)
+        PocketNarrator.saveChoice(voiceLibrary, id, PocketNarrator.choice(voiceLibrary, id).first, percent)
+        session?.restartCurrent()
     }
 
     /** Choose a narrator for this document; null = system default. */

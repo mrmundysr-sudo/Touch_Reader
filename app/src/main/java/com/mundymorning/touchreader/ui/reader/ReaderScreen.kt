@@ -147,6 +147,21 @@ fun ReaderScreen(container: AppContainer, docId: Long, autoPlay: Boolean, onBack
                     modifier = Modifier.clickable { controller.setSpeed(v); sheet = Sheet.NONE },
                 )
             }
+            // a saved voice can also be slowed down without changing its pitch
+            controller.voicePace()?.let { current ->
+                item {
+                    var pace by remember { mutableStateOf(current) }
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text("Voice pace (your voice)", style = MaterialTheme.typography.titleSmall)
+                        Text("Slows the voice down without changing its pitch. 100% is as the model speaks; 80% is the slowest.", style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(100, 95, 90, 85, 80).forEach { pc ->
+                                FilterChip(pace == pc, { pace = pc; controller.setVoicePace(pc) }, { Text("$pc%") })
+                            }
+                        }
+                    }
+                }
+            }
         }
         Sheet.SLEEP -> SimpleSheet("Sleep timer", { sheet = Sheet.NONE }) {
             val options = listOf<Pair<String, Int?>>("Off" to null, "15 minutes" to 15, "30 minutes" to 30, "45 minutes" to 45, "60 minutes" to 60)
