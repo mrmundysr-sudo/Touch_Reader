@@ -1,0 +1,37 @@
+name: Pocket TTS port
+
+# Verification for the Kotlin port of Kyutai's Pocket TTS (community ONNX export, pinned): pins the model files and,
+# later, compares the Kotlin code with the Python reference. Reference voices are synthetic; no real person's voice is used.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - ".github/workflows/pocket-onnx.yml"
+      - "scripts/pocket_*.py"
+      - "core/pockettts/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pocket-onnx-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  port:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      POCKET_SRC: ${{ github.workspace }}/pocket-onnx
+      POCKET_ONNX_REV: 58a6d00cf13d239b6748cb0769f35c580a8f606c
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Fetch the pinned model files and describe their formats
+        run: |
+          python -m pip install --upgrade pip
+          pip install huggingface_hub sentencepiece protobuf numpy
+          python scripts/pocket_discover.py
