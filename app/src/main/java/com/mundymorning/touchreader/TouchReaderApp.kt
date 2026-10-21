@@ -28,6 +28,7 @@ class AppContainer(app: Application) {
     val exporter = ExportController(app, store, settings, voicePacks, voiceLibrary, controller)
     val studio = VoiceStudioSession(app, voiceLibrary)
     val samplePlayer = SamplePlayer(app.cacheDir)
+    val voiceLab = com.mundymorning.touchreader.lab.VoiceLab(voicePacks, voiceLibrary, samplePlayer)
 }
 
 class TouchReaderApp : Application() {

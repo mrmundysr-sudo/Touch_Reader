@@ -116,6 +116,16 @@ Not done / limits:
 
 The Voices tab lists the optional downloads (neural voice, voice cloning add-on) with their size, licence and what they need first.
 
+## Voice lab (experimental, Pocket TTS)
+
+Why: OpenVoice conversion only gets the tone colour (voice-match 0.87 but judged "nothing like" the person by the user). Pocket TTS (Kyutai, about 100M parameters) clones from a recording directly.
+
+- Kotlin port in `core/pockettts` (tokenizer, bundle/state handling, generation loop, ONNX Runtime). Licence: weights CC-BY-4.0 via the ungated community ONNX export `KevinAHM/pocket-tts-onnx`, pinned to one revision; Kyutai's terms prohibit cloning a voice without the person's explicit lawful consent. The pack notice carries both.
+- Verified in CI against the Python reference (real model files): tokenizer, text embeddings, flow network, voice encoder match; transformer conditioning differs by about 5% (believed int8 / ONNX Runtime version drift, not proven); decoder checked only for gross errors. Kotlin output of a test sentence transcribed correctly except one word ("box" for "fox"). CI server speed: RTF 0.2-0.4.
+- NOT verified: how close it sounds to a real person's voice (that needs listening), and speed on the user's phones.
+- App: new "Voice lab" download (165 MB) in the Voices tab; once installed, each saved voice gets "Try in voice lab". It makes a 3-sentence sample, plays it and shows timings. Nothing else in the app uses it. The voice analysis is cached in the voice profile.
+- Decision pending: only if the user hears a good result does Pocket TTS become an export voice.
+
 ## Known limitations / risks
 
 - Module layout: `core/{document,reader,tts}` are separate JVM modules; storage, audio, library, reader, voices and settings live as packages inside `app`, not separate modules yet.

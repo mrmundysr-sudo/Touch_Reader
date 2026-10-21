@@ -170,6 +170,75 @@
           "sha256": "0d3d3c4b3527824ce961e1814337d7f0c61f265d3a8a598a45988d5d7f93ff1a"
         }
       ]
+    },
+    {
+      "id": "pocket-tts-v1",
+      "name": "Voice lab: Pocket TTS (experimental)",
+      "description": "Experimental test of a stronger voice-copying model. Makes a short sample from one of your saved recordings so you can hear how close it gets. Not used for reading yet.",
+      "engine": "pockettts",
+      "language": "en",
+      "version": 1,
+      "license": "CC-BY-4.0 (model weights); MIT (code)",
+      "licenseUrl": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/LICENSE",
+      "attribution": "Kyutai (Pocket TTS); ONNX export by KevinAHM",
+      "requiresAcceptance": true,
+      "notice": "Pocket TTS is made by Kyutai and shared under the CC-BY-4.0 licence (credit: Kyutai; ONNX conversion by KevinAHM on Hugging Face). Kyutai's terms prohibit using it to copy a voice without the explicit, lawful consent of the person, to impersonate anyone, or to mislead people. Only use recordings of your own voice or of people who have given you permission, and clearly label anything you share as computer-generated. This is an experimental lab: it only makes short test samples on this phone, and nothing is uploaded. The files come directly from Hugging Face, not from Touch Reader; the licence is saved with them.",
+      "files": [
+        {
+          "path": "LICENSE",
+          "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/LICENSE",
+          "sizeBytes": 18655,
+          "sha256": "fe7b4ce83b8381cc5b216bbb4af73c570688d1b819c73bbaed8ca401f4677cd6"
+        },
+        {
+          "path": "flow_lm_main_int8.onnx",
+          "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/flow_lm_main_int8.onnx",
+          "sizeBytes": 76341079,
+          "sha256": "f9bd8106b79a0192c1c43399ab938fb24900a95c1c599870d75a884e99000116"
+        },
+        {
+          "path": "flow_lm_flow_int8.onnx",
+          "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/flow_lm_flow_int8.onnx",
+          "sizeBytes": 9962530,
+          "sha256": "3dd781ee5abee9e195320bf0106bebd6372a852b3b36352524ee78b40554635d"
+        },
+        {
+          "path": "mimi_decoder_int8.onnx",
+          "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/mimi_decoder_int8.onnx",
+          "sizeBytes": 22684077,
+          "sha256": "3630450a3297a101792a6ac66619ebc70ab916b265e6220c2afaef8b1673f925"
+        },
+        {
+          "path": "mimi_encoder.onnx",
+          "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/mimi_encoder.onnx",
+          "sizeBytes": 39768446,
+          "sha256": "853e2ca623b8782d94c3745ec6133bfdff7ce33d9b11128bd29ea03f28d76e3d"
+        },
+        {
+          "path": "text_conditioner.onnx",
+          "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/text_conditioner.onnx",
+          "sizeBytes": 16388344,
+          "sha256": "4ecee995fb69f85c7a7493d11f7b5ee15d9950facc7ab3f5c9c49ef1e03847bb"
+        },
+        {
+          "path": "bundle.json",
+          "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/bundle.json",
+          "sizeBytes": 24381,
+          "sha256": "bab643150f437f37df080a710520ff39ed9ebd9a339f8ebdc739f7eddfc28b3f"
+        },
+        {
+          "path": "bos_before_voice.npy",
+          "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/bos_before_voice.npy",
+          "sizeBytes": 4224,
+          "sha256": "f46edf4f7007b7ba4ea58831f49d003e59e167b4641c44bb3addfe9231a780b1"
+        },
+        {
+          "path": "tokenizer.model",
+          "url": "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/58a6d00cf13d239b6748cb0769f35c580a8f606c/onnx/english_2026-04/tokenizer.model",
+          "sizeBytes": 59339,
+          "sha256": "d461765ae179566678c93091c5fa6f2984c31bbe990bf1aa62d92c64d91bc3f6"
+        }
+      ]
     }
   ]
 }
