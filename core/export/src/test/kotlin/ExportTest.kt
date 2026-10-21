@@ -213,6 +213,54 @@ class PlannerTest {
     }
 }
 
+class FlowTest {
+    @Test fun flowJoinsSentencesOfAParagraphWithNaturalPauses() {
+        val book = sampleBook(chapters = 1, sentencesPer = 10)
+        val settings = ExportSettings("custom:x", 4, 64, listOf(0), announceChapters = true, flow = true)
+        val spec = ExportPlanner.plan(book, settings).first()
+        val pieces = ExportPlanner.pieces(book, spec, flow = true)
+        assertEquals(ExportPlanner.FLOW_TITLE_PAUSE_MS, pieces.first().pauseAfterMs)
+        val body = pieces.drop(1)
+        assertTrue(body.size < 10, "sentences were joined: ${body.size} pieces")
+        assertTrue(body.any { it.members.size > 1 })
+        assertTrue(body.all { it.text.length <= ExportPlanner.FLOW_MAX_CHARS || it.members.size == 1 })
+        // never joins across a paragraph
+        assertTrue(body.none { it.text.contains("paragraph 1") && it.text.contains("paragraph 2") })
+        // every sentence is covered exactly once, in order
+        assertEquals((spec.first..spec.last).toList(), body.flatMap { it.members })
+        val pauses = body.map { it.pauseAfterMs }
+        assertTrue(pauses.all { it == ExportPlanner.FLOW_SENTENCE_PAUSE_MS || it == ExportPlanner.FLOW_PARAGRAPH_PAUSE_MS })
+        assertTrue(pauses.count { it == ExportPlanner.FLOW_PARAGRAPH_PAUSE_MS } >= 1 && pauses.count { it == ExportPlanner.FLOW_SENTENCE_PAUSE_MS } >= 1)
+    }
+
+    @Test fun withoutFlowNothingChanges() {
+        val book = sampleBook(chapters = 1, sentencesPer = 10)
+        val spec = ExportPlanner.plan(book, ExportSettings("M1", 4, 64, listOf(0))).first()
+        val p = ExportPlanner.pieces(book, spec)
+        assertTrue(p.drop(1).all { it.members.size == 1 })
+        assertEquals(p.map { it.text }, ExportPlanner.pieces(book, spec, flow = false).map { it.text })
+    }
+
+    @Test fun flowBookRendersWithFewerSpeechCallsAndResumes() {
+        val book = sampleBook()
+        val settings = ExportSettings("custom:x", 4, 64, listOf(0, 1, 2), flow = true)
+        val plan = ExportPlanner.plan(book, settings)
+        val synth = FakeSynth()
+        val store = ExportStore(tmpDir())
+        val r = ExportEngine(book, plan, settings, store, synth, FakeEncoder()).run({ false })
+        assertTrue(r is RunResult.Completed)
+        val flowCalls = synth.calls.size
+        val plain = FakeSynth()
+        ExportEngine(book, plan, ExportSettings("M1", 4, 64, listOf(0, 1, 2)), ExportStore(tmpDir()), plain, FakeEncoder()).run({ false })
+        assertTrue(flowCalls < plain.calls.size, "flow $flowCalls vs plain ${plain.calls.size}")
+        assertTrue(plan.all { store.isChunkDone(it) })
+        // every sentence has a start time, and they only move forward, even for sentences joined into one piece
+        val starts = (0 until 8).map { store.sentenceStartMs(0, it) }
+        assertTrue(starts.all { it != null }, starts.toString())
+        assertTrue(starts.filterNotNull().zipWithNext().all { (a, b) -> b > a }, starts.toString())
+    }
+}
+
 class EngineTest {
     private fun setup(synth: FakeSynth = FakeSynth(), enc: FakeEncoder = FakeEncoder(), chapters: List<Int> = listOf(0, 1, 2)): Triple<ExportEngine, ExportStore, List<ChunkSpec>> {
         val book = sampleBook()

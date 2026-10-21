@@ -46,7 +46,7 @@ import kotlinx.coroutines.launch
 
 private enum class Sheet { NONE, CHAPTERS, BOOKMARKS, VOICE, SPEED, SLEEP, TEXT }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ReaderScreen(container: AppContainer, docId: Long, autoPlay: Boolean, onBack: () -> Unit, onExport: (Long) -> Unit) {
     val controller = container.controller
@@ -154,7 +154,7 @@ fun ReaderScreen(container: AppContainer, docId: Long, autoPlay: Boolean, onBack
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Text("Voice pace (your voice)", style = MaterialTheme.typography.titleSmall)
                         Text("Slows the voice down without changing its pitch. 100% is as the model speaks; 80% is the slowest.", style = MaterialTheme.typography.bodySmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(100, 95, 90, 85, 80).forEach { pc ->
                                 FilterChip(pace == pc, { pace = pc; controller.setVoicePace(pc) }, { Text("$pc%") })
                             }
@@ -296,7 +296,7 @@ private fun PlayerPanel(ui: com.mundymorning.touchreader.playback.PlayerUi, book
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun SimpleSheet(title: String, onDismiss: () -> Unit, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
     ModalBottomSheet(onDismiss) {
@@ -305,7 +305,7 @@ private fun SimpleSheet(title: String, onDismiss: () -> Unit, content: androidx.
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun BookmarksSheet(container: AppContainer, docId: Long, book: ReaderBook, pos: Position, onDismiss: () -> Unit, onGo: (Position) -> Unit) {
     val marks by container.db.bookmarks().observe(docId).collectAsState(initial = emptyList<BookmarkEntity>())

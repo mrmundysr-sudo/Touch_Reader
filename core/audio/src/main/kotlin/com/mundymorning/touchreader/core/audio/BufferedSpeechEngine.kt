@@ -20,6 +20,16 @@ class BufferedSpeechEngine(
     private val slowRtf: Double = 1.0,
     private val slowMinSamples: Int = 3,
     private val nanoTime: () -> Long = System::nanoTime,
+    /**
+     * When above 0, sentences of one paragraph that are waiting in the queue are spoken together as one piece of up to
+     * this many characters (so the voice carries on from one sentence to the next instead of ending each on a full
+     * stop), then cut back into sentences at the pauses so each is still reported separately.
+     */
+    private val mergeMaxChars: Int = 0,
+    /** Quiet added after a sentence that is followed by another of the same paragraph (only when [mergeMaxChars] is on). */
+    private val sentencePauseMs: Int = 0,
+    /** Quiet added after the last sentence of a paragraph (only when [mergeMaxChars] is on). */
+    private val paragraphPauseMs: Int = 0,
 ) : SpeechEngine {
     override var listener: SpeechEngine.Listener? = null
 
@@ -40,8 +50,8 @@ class BufferedSpeechEngine(
 
     val stats = SynthesisStats()
 
-    private class Request(val gen: Int, val id: Int, val text: String, val enqueuedAt: Long, val first: Boolean)
-    private class Ready(val req: Request, val pcm: ShortArray)
+    private class Request(val gen: Int, val id: Int, val text: String, val enqueuedAt: Long, val first: Boolean, val paragraphEnd: Boolean)
+    private class Ready(val req: Request, val pcm: ShortArray, val pauseAfterMs: Int = 0)
 
     @Volatile private var generation = 0
     @Volatile private var speed = 1f
@@ -56,9 +66,11 @@ class BufferedSpeechEngine(
     private val synthThread = Thread({ synthLoop() }, "tr-synth").apply { isDaemon = true; start() }
     private val playThread = Thread({ playLoop() }, "tr-play").apply { isDaemon = true; start() }
 
-    override fun enqueue(id: Int, text: String) {
+    override fun enqueue(id: Int, text: String) = enqueue(id, text, true)
+
+    override fun enqueue(id: Int, text: String, paragraphEnd: Boolean) {
         val first = inFlight.getAndIncrement() == 0
-        requests.put(Request(generation, id, text, nanoTime(), first))
+        requests.put(Request(generation, id, text, nanoTime(), first, paragraphEnd))
     }
 
     override fun stop() {
@@ -105,13 +117,30 @@ class BufferedSpeechEngine(
 
     private fun current(r: Request) = r.gen == generation && !released
 
+    /** [first] plus the sentences queued right behind it that belong to the same paragraph and fit in [mergeMaxChars]. */
+    private fun collectGroup(first: Request): List<Request> {
+        val group = arrayListOf(first)
+        if (mergeMaxChars <= 0) return group
+        var chars = first.text.length
+        while (!group.last().paragraphEnd) {
+            val next = requests.peek() ?: break
+            if (next.gen != first.gen || chars + 1 + next.text.length > mergeMaxChars) break
+            requests.poll()
+            group += next
+            chars += 1 + next.text.length
+        }
+        return group
+    }
+
     private fun synthLoop() {
         while (!released) {
             val req = try { requests.take() } catch (e: InterruptedException) { return }
             if (!current(req)) continue
+            val group = collectGroup(req)
+            val text = if (group.size == 1) req.text else group.joinToString(" ") { it.text }
             val t0 = nanoTime()
             val pcm = try {
-                synchronized(synthLock) { synthesizer.synthesize(req.text, speed) { !current(req) } }
+                synchronized(synthLock) { synthesizer.synthesize(text, speed) { !current(req) } }
             } catch (e: Exception) {
                 if (current(req)) listener?.onError(req.id, e.message ?: "Speech synthesis failed.")
                 continue
@@ -121,11 +150,17 @@ class BufferedSpeechEngine(
             stats.record(nanoTime() - t0, seconds)
             noteSpeed(nanoTime() - t0, seconds)
             checkSlow()
-            val item = Ready(req, pcm)
-            try {
-                // Bounded: blocks here when playback is far behind, instead of growing memory.
-                while (!ready.offer(item, 50, TimeUnit.MILLISECONDS)) if (!current(req)) break
-            } catch (e: InterruptedException) { return }
+            val parts = if (group.size == 1) listOf(pcm) else AudioSplit.split(pcm, group.map { it.text.length.coerceAtLeast(1) }, synthesizer.sampleRate)
+            for ((i, part) in parts.withIndex()) {
+                val last = i == parts.lastIndex
+                val pause = if (mergeMaxChars <= 0 || !last) 0 else if (group[i].paragraphEnd) paragraphPauseMs else sentencePauseMs
+                val item = Ready(group[i], part, pause)
+                try {
+                    // Bounded: blocks here when playback is far behind, instead of growing memory.
+                    while (!ready.offer(item, 50, TimeUnit.MILLISECONDS)) if (!current(req)) break
+                } catch (e: InterruptedException) { return }
+                if (!current(req)) break
+            }
         }
     }
 
@@ -155,6 +190,7 @@ class BufferedSpeechEngine(
             if (req.first) stats.recordFirstAudio((nanoTime() - req.enqueuedAt) / 1_000_000)
             listener?.onStart(req.id)
             sink.write(item.pcm) { !current(req) }
+            if (current(req) && item.pauseAfterMs > 0) sink.write(ShortArray(item.pauseAfterMs * synthesizer.sampleRate / 1000)) { !current(req) }
             if (current(req)) {
                 inFlight.decrementAndGet()
                 listener?.onDone(req.id)

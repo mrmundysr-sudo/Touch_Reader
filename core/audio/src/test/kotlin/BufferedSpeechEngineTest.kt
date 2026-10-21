@@ -178,3 +178,79 @@ class BufferedSpeechEngineTest {
         e.release()
     }
 }
+
+private class RecordingSynth(val delayFirstMs: Long = 0) : Synthesizer {
+    override val sampleRate = 1000
+    val texts = CopyOnWriteArrayList<String>()
+    override fun synthesize(text: String, speed: Float, isCancelled: () -> Boolean): ShortArray {
+        if (texts.isEmpty() && delayFirstMs > 0) Thread.sleep(delayFirstMs)
+        texts += text
+        return ShortArray(300 * text.length) { 1000 } // loud, so the cuts between sentences are not on a pause (that is tested elsewhere)
+    }
+}
+
+private class WritesSink : AudioSink {
+    val writes = CopyOnWriteArrayList<Int>()
+    override fun open(sampleRate: Int) {}
+    override fun write(pcm: ShortArray, isCancelled: () -> Boolean) { writes += pcm.size }
+    override fun flush() {}
+    override fun close() {}
+}
+
+class MergingTest {
+    @Test fun sentencesOfOneParagraphAreSpokenTogetherAndStillReportedSeparately() {
+        val synth = RecordingSynth(delayFirstMs = 150); val rec = Recorder()
+        val e = BufferedSpeechEngine(synth, WritesSink(), maxReady = 4, mergeMaxChars = 100).also { it.listener = rec }
+        e.enqueue(0, "warm", true)           // keeps the synthesis thread busy while the rest are queued
+        e.enqueue(1, "Yes.", false)
+        e.enqueue(2, "He is following someone.", true)
+        e.enqueue(3, "New paragraph.", true)
+        awaitUntil { rec.events.size == 8 }
+        assertEquals(listOf("warm", "Yes. He is following someone.", "New paragraph."), synth.texts.toList())
+        assertEquals(listOf("start0", "done0", "start1", "done1", "start2", "done2", "start3", "done3"), rec.events.toList())
+        e.release()
+    }
+
+    @Test fun mergingStopsAtTheCharacterLimit() {
+        val synth = RecordingSynth(delayFirstMs = 150); val rec = Recorder()
+        val e = BufferedSpeechEngine(synth, WritesSink(), maxReady = 4, mergeMaxChars = 25).also { it.listener = rec }
+        e.enqueue(0, "warm", true)
+        e.enqueue(1, "Twelve chars", false)
+        e.enqueue(2, "Twelve chars", false)
+        e.enqueue(3, "Twelve chars", true)
+        awaitUntil { rec.events.size == 8 }
+        assertEquals(listOf("warm", "Twelve chars Twelve chars", "Twelve chars"), synth.texts.toList())
+        e.release()
+    }
+
+    @Test fun withoutMergingEverySentenceIsSpokenOnItsOwnAsBefore() {
+        val synth = RecordingSynth(delayFirstMs = 100); val rec = Recorder()
+        val e = BufferedSpeechEngine(synth, WritesSink(), maxReady = 4).also { it.listener = rec }
+        e.enqueue(0, "warm", true); e.enqueue(1, "a", false); e.enqueue(2, "b", false)
+        awaitUntil { rec.events.size == 6 }
+        assertEquals(listOf("warm", "a", "b"), synth.texts.toList())
+        e.release()
+    }
+
+    @Test fun pausesAreAddedAfterTheLastSentenceOfAGroupOnly() {
+        val synth = RecordingSynth(); val sink = WritesSink(); val rec = Recorder()
+        val e = BufferedSpeechEngine(synth, sink, maxReady = 4, mergeMaxChars = 100, sentencePauseMs = 200, paragraphPauseMs = 600).also { it.listener = rec }
+        e.enqueue(1, "one", true)
+        awaitUntil { rec.events.size == 2 }
+        // 3 chars * 300 samples of speech, then 600 ms of quiet at 1000 Hz after a paragraph end
+        assertEquals(listOf(900, 600), sink.writes.toList())
+        e.release()
+    }
+
+    @Test fun aStaleQueuedSentenceIsNotMergedAfterStop() {
+        val synth = RecordingSynth(delayFirstMs = 100); val rec = Recorder()
+        val e = BufferedSpeechEngine(synth, WritesSink(), maxReady = 4, mergeMaxChars = 100).also { it.listener = rec }
+        e.enqueue(0, "warm", true)
+        e.enqueue(1, "old", false)
+        e.stop()
+        e.enqueue(5, "new", true)
+        awaitUntil { rec.events.contains("done5") }
+        assertTrue(synth.texts.none { it.contains("old") && it.contains("new") }, synth.texts.toString())
+        e.release()
+    }
+}

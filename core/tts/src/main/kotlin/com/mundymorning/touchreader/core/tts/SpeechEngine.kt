@@ -17,6 +17,12 @@ interface SpeechEngine {
     /** Queue [text] after anything already queued. [id] is echoed back in callbacks. */
     fun enqueue(id: Int, text: String)
 
+    /**
+     * Like [enqueue], also telling whether [text] is the last sentence of its paragraph. Engines that speak better when
+     * given a few sentences at once use it to join sentences of one paragraph; others ignore it.
+     */
+    fun enqueue(id: Int, text: String, paragraphEnd: Boolean) = enqueue(id, text)
+
     /** Immediately stop speaking and discard everything queued. */
     fun stop()
 

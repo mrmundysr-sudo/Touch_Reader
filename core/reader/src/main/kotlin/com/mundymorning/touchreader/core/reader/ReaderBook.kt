@@ -49,6 +49,13 @@ class ReaderBook(val title: String, val author: String?, val chapters: List<Read
 
     fun sentenceText(p: Position): String = chapters[p.chapter].text(p.sentence)
 
+    /** True if the sentence at [p] is the last one of its paragraph (block) or of its chapter. */
+    fun endsParagraph(p: Position): Boolean {
+        val c = chapters[p.chapter]
+        val next = c.sentences.getOrNull(p.sentence + 1) ?: return true
+        return next.block != c.sentences[p.sentence].block
+    }
+
     fun next(p: Position): Position? {
         val c = chapters[p.chapter]
         if (p.sentence + 1 < c.sentences.size) return Position(p.chapter, p.sentence + 1)

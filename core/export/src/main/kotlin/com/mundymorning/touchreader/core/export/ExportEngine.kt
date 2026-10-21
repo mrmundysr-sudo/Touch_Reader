@@ -1,5 +1,6 @@
 package com.mundymorning.touchreader.core.export
 
+import com.mundymorning.touchreader.core.audio.AudioSplit
 import com.mundymorning.touchreader.core.audio.Synthesizer
 import com.mundymorning.touchreader.core.reader.ReaderBook
 import java.io.ByteArrayOutputStream
@@ -73,9 +74,9 @@ class ExportEngine(
             var samples = 0L
             val rate = synthesizer.sampleRate
             val out = ArrayList<ShortArray>()
-            for (piece in ExportPlanner.pieces(book, spec)) {
+            for (piece in ExportPlanner.pieces(book, spec, settings.flow)) {
                 if (isStopped()) return RunResult.Stopped
-                starts[piece.sentence] = samples * 1000 / rate
+                val pieceStart = samples
                 val audio = try {
                     synthesizer.synthesize(piece.text, settings.speed) { isStopped() }.also { if (it.isNotEmpty()) consecutiveFailures = 0 }
                 } catch (e: Exception) {
@@ -88,6 +89,12 @@ class ExportEngine(
                     ShortArray(rate / 2) // half a second of quiet in place of the sentence that failed
                 }
                 if (isStopped()) return RunResult.Stopped
+                if (piece.members.size == 1) starts[piece.sentence] = pieceStart * 1000 / rate
+                else {
+                    // joined sentences: find where each begins from the pauses in the audio
+                    val ends = AudioSplit.boundaries(audio, piece.memberChars, rate)
+                    piece.members.forEachIndexed { k, m -> starts[m] = (pieceStart + (if (k == 0) 0 else ends[k - 1])) * 1000 / rate }
+                }
                 out += audio; samples += audio.size
                 val gap = ShortArray(piece.pauseAfterMs * rate / 1000)
                 out += gap; samples += gap.size

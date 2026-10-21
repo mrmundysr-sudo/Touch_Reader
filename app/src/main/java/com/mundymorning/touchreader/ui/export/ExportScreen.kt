@@ -44,7 +44,7 @@ private fun clock(ms: Int): String {
     return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s % 3600 / 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpenVoices: () -> Unit) {
     val ctx = LocalContext.current
@@ -128,7 +128,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
         val start = if (customVoice) PocketNarrator.choice(container.voiceLibrary, voice.removePrefix(Engines.CUSTOM_PREFIX)).first else 0
         return ExportSettings(
             voice, steps, kbps, chapters, announceChapters = true,
-            cloneEngine = ExportSettings.CLONE_POCKET, refStartSeconds = start, pacePercent = if (customVoice) pace else 100,
+            cloneEngine = ExportSettings.CLONE_POCKET, refStartSeconds = start, pacePercent = if (customVoice) pace else 100, flow = customVoice,
         )
     }
 
@@ -248,7 +248,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
                             )
                             Text("Pace", fontWeight = FontWeight.Bold)
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 listOf(100, 95, 90, 85, 80).forEach { pc ->
                                     FilterChip(pace == pc, {
                                         pace = pc
@@ -262,7 +262,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                         if (!pocketInstalled && profiles.isNotEmpty()) Text("To use your own voice, install the Voice cloning download in the Voices tab.", style = MaterialTheme.typography.bodySmall)
 
                         Text("Speed or quality", fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(steps == 4, { steps = 4 }, { Text("Faster") })
                             FilterChip(steps == 8, { steps = 8 }, { Text("Better quality") })
                         }
@@ -278,7 +278,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
 
                         Text("File size", fontWeight = FontWeight.Bold)
                         val seconds = ExportEstimator.audioSeconds(b, selected.toList())
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(48 to "Smaller", 64 to "Standard", 96 to "Higher").forEach { (k, label) ->
                                 FilterChip(kbps == k, { kbps = k }, { Text("$label · ${ExportEstimator.sizeBytes(seconds, k) / 1_000_000} MB") })
                             }

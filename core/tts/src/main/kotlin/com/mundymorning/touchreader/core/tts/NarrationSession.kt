@@ -102,7 +102,7 @@ class NarrationSession(
         val id = nextId++
         inflight[id] = p
         lastQueued = p
-        engine.enqueue(id, book.sentenceText(p))
+        engine.enqueue(id, book.sentenceText(p), book.endsParagraph(p))
     }
 
     private fun fill() {

@@ -20,6 +20,11 @@ data class ExportSettings(
     val refStartSeconds: Int = 0,
     /** Pocket voices: 100 = as spoken, lower = slowed down afterwards without changing pitch. */
     val pacePercent: Int = 100,
+    /**
+     * Speak neighbouring sentences of a paragraph together, with natural pauses, so a story flows instead of sounding like
+     * separate sentences. Used for saved voices; books started before this existed keep reading sentence by sentence.
+     */
+    val flow: Boolean = false,
 ) {
     companion object {
         const val CLONE_OPENVOICE = "openvoice"
@@ -33,7 +38,15 @@ data class ChunkSpec(val chapter: Int, val index: Int, val first: Int, val last:
 }
 
 /** One thing to say, and how long to stay quiet after it. */
-class Piece(val text: String, val pauseAfterMs: Int, /** Sentence index in the chapter, or -1 for the spoken title. */ val sentence: Int)
+class Piece(
+    val text: String,
+    val pauseAfterMs: Int,
+    /** Sentence index in the chapter of the first sentence in [text], or -1 for the spoken title. */
+    val sentence: Int,
+    /** Every sentence index [text] covers (one unless sentences were joined), and the length of each, to find where each starts in the audio. */
+    val members: List<Int> = listOf(sentence),
+    val memberChars: List<Int> = listOf(text.length),
+)
 
 object ExportPlanner {
     const val SENTENCE_PAUSE_MS = 300
@@ -41,6 +54,12 @@ object ExportPlanner {
     const val TITLE_PAUSE_MS = 900
     const val MAX_SENTENCES = 8
     const val MAX_CHARS = 1200
+
+    /** Flowing narration: sentences of one paragraph are joined into pieces of up to this many characters (the voice model's own limit is about 50 words). */
+    const val FLOW_MAX_CHARS = 220
+    const val FLOW_SENTENCE_PAUSE_MS = 200
+    const val FLOW_PARAGRAPH_PAUSE_MS = 600
+    const val FLOW_TITLE_PAUSE_MS = 800
 
     fun plan(book: ReaderBook, settings: ExportSettings): List<ChunkSpec> {
         val specs = ArrayList<ChunkSpec>()
@@ -63,14 +82,28 @@ object ExportPlanner {
         return specs
     }
 
-    fun pieces(book: ReaderBook, spec: ChunkSpec): List<Piece> {
+    fun pieces(book: ReaderBook, spec: ChunkSpec, flow: Boolean = false): List<Piece> {
         val chapter = book.chapters[spec.chapter]
         val out = ArrayList<Piece>()
-        if (spec.withTitle && chapter.title.isNotBlank()) out += Piece(chapter.title.trim(), TITLE_PAUSE_MS, -1)
-        for (i in spec.first..spec.last) {
-            val nextBlock = chapter.sentences.getOrNull(i + 1)?.block
-            val pause = if (nextBlock != null && nextBlock != chapter.sentences[i].block) PARAGRAPH_PAUSE_MS else SENTENCE_PAUSE_MS
-            out += Piece(chapter.text(i), pause, i)
+        if (spec.withTitle && chapter.title.isNotBlank()) out += Piece(chapter.title.trim(), if (flow) FLOW_TITLE_PAUSE_MS else TITLE_PAUSE_MS, -1)
+        fun paragraphEndsAfter(i: Int): Boolean {
+            val next = chapter.sentences.getOrNull(i + 1) ?: return false
+            return next.block != chapter.sentences[i].block
+        }
+        var i = spec.first
+        while (i <= spec.last) {
+            var j = i
+            if (flow) {
+                var chars = chapter.text(i).length
+                while (j < spec.last && chapter.sentences[j + 1].block == chapter.sentences[i].block && chars + 1 + chapter.text(j + 1).length <= FLOW_MAX_CHARS) {
+                    j++; chars += 1 + chapter.text(j).length
+                }
+            }
+            val paragraphEnd = paragraphEndsAfter(j)
+            val pause = if (flow) (if (paragraphEnd) FLOW_PARAGRAPH_PAUSE_MS else FLOW_SENTENCE_PAUSE_MS) else (if (paragraphEnd) PARAGRAPH_PAUSE_MS else SENTENCE_PAUSE_MS)
+            val members = (i..j).toList()
+            out += Piece(members.joinToString(" ") { chapter.text(it) }, pause, i, members, members.map { chapter.text(it).length })
+            i = j + 1
         }
         return out
     }

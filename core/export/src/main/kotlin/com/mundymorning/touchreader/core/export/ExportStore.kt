@@ -22,7 +22,7 @@ data class ExportManifest(
             JSONObject().put("voice", settings.voice).put("steps", settings.steps).put("bitrateKbps", settings.bitrateKbps)
                 .put("chapters", JSONArray(settings.chapters)).put("announceChapters", settings.announceChapters)
                 .put("speed", settings.speed.toDouble())
-                .put("cloneEngine", settings.cloneEngine).put("refStartSeconds", settings.refStartSeconds).put("pacePercent", settings.pacePercent),
+                .put("cloneEngine", settings.cloneEngine).put("refStartSeconds", settings.refStartSeconds).put("pacePercent", settings.pacePercent).put("flow", settings.flow),
         )
 
     companion object {
@@ -35,7 +35,7 @@ data class ExportManifest(
                 ExportSettings(
                     s.getString("voice"), s.getInt("steps"), s.getInt("bitrateKbps"),
                     List(ch.length()) { ch.getInt(it) }, s.optBoolean("announceChapters", true), s.optDouble("speed", 1.0).toFloat(),
-                    s.optString("cloneEngine", ExportSettings.CLONE_OPENVOICE), s.optInt("refStartSeconds", 0), s.optInt("pacePercent", 100),
+                    s.optString("cloneEngine", ExportSettings.CLONE_OPENVOICE), s.optInt("refStartSeconds", 0), s.optInt("pacePercent", 100), s.optBoolean("flow", false),
                 ),
                 o.getLong("createdAt"),
             )

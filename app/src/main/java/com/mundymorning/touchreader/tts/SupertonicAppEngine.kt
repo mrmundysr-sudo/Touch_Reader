@@ -3,6 +3,7 @@ package com.mundymorning.touchreader.tts
 import android.content.Context
 import com.mundymorning.touchreader.core.audio.BufferedSpeechEngine
 import com.mundymorning.touchreader.core.audio.Synthesizer
+import com.mundymorning.touchreader.core.export.ExportPlanner
 import com.mundymorning.touchreader.core.tts.SpeechEngine
 import com.mundymorning.touchreader.core.voicestudio.VoiceProfile
 import com.mundymorning.touchreader.studio.VoiceLibrary
@@ -83,7 +84,7 @@ class SupertonicAppEngine(
     }
 
     private val lock = Any()
-    private val pending = ArrayList<Pair<Int, String>>()
+    private val pending = ArrayList<Triple<Int, String, Boolean>>()
     private var buffered: BufferedSpeechEngine? = null
     private var backend: Backend? = null
     private var loadedKind: Kind? = null
@@ -138,12 +139,17 @@ class SupertonicAppEngine(
                     }
                 }
             }
-            val b = BufferedSpeechEngine(be.synthesizer, AudioTrackSink())
+            // A saved voice speaks the sentences of a paragraph together, so the story flows instead of every sentence
+            // ending on a full stop, with short pauses of its own between them. Built-in voices stay sentence by sentence.
+            val b = if (kind == Kind.SAVED) BufferedSpeechEngine(
+                be.synthesizer, AudioTrackSink(), maxReady = 4, mergeMaxChars = ExportPlanner.FLOW_MAX_CHARS,
+                sentencePauseMs = ExportPlanner.FLOW_SENTENCE_PAUSE_MS, paragraphPauseMs = ExportPlanner.FLOW_PARAGRAPH_PAUSE_MS,
+            ) else BufferedSpeechEngine(be.synthesizer, AudioTrackSink())
             b.listener = forwarder
             b.onSlow = { rtf -> onSlow?.invoke(rtf) }
             b.onSpeedKnown = { rtf -> onSpeedKnown?.invoke(rtf) }
             b.setSpeed(speed)
-            val queued: List<Pair<Int, String>>
+            val queued: List<Triple<Int, String, Boolean>>
             var reload: Kind? = null
             synchronized(lock) {
                 if (released) { b.release(); return }
@@ -161,25 +167,27 @@ class SupertonicAppEngine(
             }
             reload?.let { b.release(); startLoad(it); return }
             be.setVoice(requestedVoice) // the narrator may have been changed while the model was loading
-            queued.forEach { (id, text) -> b.enqueue(id, text) }
+            queued.forEach { (id, text, end) -> b.enqueue(id, text, end) }
         } catch (t: Throwable) {
             val msg = if (t is OutOfMemoryError) "Not enough memory to load the neural voice." else "The neural voice could not start (${t.javaClass.simpleName})."
             synchronized(lock) { loadingKind = null }
             _status.value = EngineStatus.Failed(msg)
             _activity.value = msg
             val queued = synchronized(lock) { pending.toList().also { pending.clear() } }
-            queued.forEach { (id, _) -> listener?.onError(id, msg) }
+            queued.forEach { (id, _, _) -> listener?.onError(id, msg) }
         }
     }
 
-    override fun enqueue(id: Int, text: String) {
+    override fun enqueue(id: Int, text: String) = enqueue(id, text, true)
+
+    override fun enqueue(id: Int, text: String, paragraphEnd: Boolean) {
         val b: BufferedSpeechEngine?
         synchronized(lock) {
             if (_status.value is EngineStatus.Failed) { listener?.onError(id, (_status.value as EngineStatus.Failed).message); return }
             b = buffered
-            if (b == null) { pending += id to text; return }
+            if (b == null) { pending += Triple(id, text, paragraphEnd); return }
         }
-        b?.enqueue(id, text)
+        b?.enqueue(id, text, paragraphEnd)
     }
 
     override fun stop() {
