@@ -61,7 +61,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
     val labReady = packStates[Engines.POCKET_PACK_ID] is PackState.Installed
     val lab by container.voiceLab.state.collectAsState()
     var labPick by remember { mutableStateOf<VoiceProfile?>(null) }
-    var labSeconds by remember { mutableIntStateOf(15) }
+    var labStart by remember { mutableIntStateOf(0) }
     val labPlaying by container.samplePlayer.playingKey.collectAsState()
     val lang = Locale.getDefault().language
     val shown = remember(voices, allLanguages) { if (allLanguages) voices else voices.filter { it.language == lang || it.language.isEmpty() } }
@@ -168,7 +168,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                     },
                 )
                 if (labReady && container.voiceLibrary.sampleFile(v.id) != null) {
-                    TextButton({ labSeconds = 15; labPick = v }, Modifier.padding(start = 16.dp)) { Text("Try in voice lab (experimental)") }
+                    TextButton({ labStart = 0; labPick = v }, Modifier.padding(start = 16.dp)) { Text("Try in voice lab (experimental)") }
                 }
               }
             }
@@ -215,7 +215,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                         is com.mundymorning.touchreader.lab.LabState.Working -> Text(st.message + "\n\nThis can take a few minutes on a slower phone. Keep the app open.")
                         is com.mundymorning.touchreader.lab.LabState.Failed -> Text(st.message, color = MaterialTheme.colorScheme.error)
                         is com.mundymorning.touchreader.lab.LabState.Done -> {
-                            Text("A ${"%.0f".format(st.audioSeconds)} second sample was made, copying the voice from ${"%.0f".format(st.referenceSeconds)} seconds of your saved recording, and played. Listen for how close it is to the real person.", style = MaterialTheme.typography.bodyMedium)
+                            Text("A ${"%.0f".format(st.audioSeconds)} second sample was made, copying the voice from seconds ${st.fromSeconds} to ${st.fromSeconds + st.referenceSeconds.toInt()} of your saved recording, and played. Listen for how close it is to the real person.", style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 "Timings on this phone:\n" +
@@ -242,23 +242,31 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
     }
 
     labPick?.let { v ->
+        val dur = remember(v.id) { container.voiceLab.recordingSeconds(v.id) ?: 15.0 }
+        val starts = remember(v.id) { generateSequence(0) { it + 15 }.takeWhile { it == 0 || it + 5 <= dur }.toList() }
+        DisposableEffect(v.id) { onDispose { container.samplePlayer.stop() } }
         AlertDialog(
-            onDismissRequest = { labPick = null },
+            onDismissRequest = { container.samplePlayer.stop(); labPick = null },
             title = { Text("Voice lab: ${v.name}") },
             text = {
-                Column {
-                    Text("How much of the saved recording should the voice be copied from? Longer may capture the voice better, but it is slower and unproven. Make a sample at each length and compare. If the recording is shorter than the choice, all of it is used.", style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("The voice is copied from 15 seconds of your saved recording (longer sounded worse, and 45 seconds runs phones out of memory). Pick the cleanest part: clear speech, no noise, no music, one speaker. Tap Listen to hear a part.", style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(8.dp))
-                    listOf(15, 30, 45).forEach { sec ->
+                    starts.forEach { st ->
+                        val end = minOf(st + 15.0, dur)
                         Row(
-                            Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(labSeconds == sec, role = Role.RadioButton) { labSeconds = sec },
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(labStart == st, role = Role.RadioButton) { labStart = st },
                             verticalAlignment = Alignment.CenterVertically,
-                        ) { RadioButton(labSeconds == sec, null); Spacer(Modifier.width(12.dp)); Text("$sec seconds" + if (sec == 15) " (default)" else "") }
+                        ) {
+                            RadioButton(labStart == st, null); Spacer(Modifier.width(12.dp))
+                            Text("$st to ${"%.0f".format(end)} seconds" + if (st == 0) " (start)" else "", Modifier.weight(1f))
+                            TextButton({ container.voiceLab.listen(v.id, st) }) { Text("Listen") }
+                        }
                     }
                 }
             },
-            confirmButton = { TextButton({ container.voiceLab.make(v.id, v.name, labSeconds); labPick = null }) { Text("Make sample") } },
-            dismissButton = { TextButton({ labPick = null }) { Text("Cancel") } },
+            confirmButton = { TextButton({ container.samplePlayer.stop(); container.voiceLab.make(v.id, v.name, labStart); labPick = null }) { Text("Make sample") } },
+            dismissButton = { TextButton({ container.samplePlayer.stop(); labPick = null }) { Text("Cancel") } },
         )
     }
 

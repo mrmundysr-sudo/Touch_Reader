@@ -22,7 +22,8 @@ sealed interface LabState {
         val loadSeconds: Double,
         val voiceSeconds: Double?,
         val voiceCached: Boolean,
-        /** How many seconds of the recording the voice was copied from. */
+        /** Which part of the recording the voice was copied from, in seconds from its start. */
+        val fromSeconds: Int,
         val referenceSeconds: Double,
     ) : LabState {
         /** Seconds of work per second of speech; below 1.0 a book could be read live on this phone. */
@@ -88,6 +89,18 @@ class VoiceLab(
 
     val installed: Boolean get() = packs.installedDir(Engines.POCKET_PACK_ID) != null
 
+    /** Length of a saved recording in seconds, or null if it cannot be read. */
+    fun recordingSeconds(profileId: String): Double? =
+        runCatching { WavIo.read(library.sampleFile(profileId)!!.readBytes()).seconds }.getOrNull()
+
+    /** Plays the part of the recording a voice would be copied from, so the user can choose a clean one. */
+    fun listen(profileId: String, startSeconds: Int) {
+        val pcm = runCatching { WavIo.read(library.sampleFile(profileId)!!.readBytes()) }.getOrNull() ?: return
+        val from = (startSeconds * pcm.sampleRate).coerceAtMost(pcm.samples.size)
+        val to = minOf(pcm.samples.size, from + REFERENCE_SECONDS * pcm.sampleRate)
+        player.playPcm("lab-segment", Pcm(pcm.sampleRate, pcm.samples.copyOfRange(from, to)))
+    }
+
     fun play() { sample?.let { player.playPcm(PLAY_KEY, it) } }
     fun stopPlaying() = player.stop()
 
@@ -98,7 +111,7 @@ class VoiceLab(
         _state.value = LabState.Idle
     }
 
-    fun make(profileId: String, voiceName: String, referenceSeconds: Int = 15) {
+    fun make(profileId: String, voiceName: String, startSeconds: Int = 0) {
         if (worker?.isAlive == true) return
         val dir = packs.installedDir(Engines.POCKET_PACK_ID) ?: run { _state.value = LabState.Failed(voiceName, "Install the voice lab download first."); return }
         val file = library.sampleFile(profileId) ?: run { _state.value = LabState.Failed(voiceName, "This voice has no saved recording."); return }
@@ -107,12 +120,12 @@ class VoiceLab(
         player.stop()
         runCatching { traceFile.writeText("") }
         _report.value = null
-        trace("start: reference ${referenceSeconds} s, ${Runtime.getRuntime().availableProcessors()} cores")
+        trace("start: seconds $startSeconds to ${startSeconds + REFERENCE_SECONDS}, ${Runtime.getRuntime().availableProcessors()} cores")
         _state.value = LabState.Working(voiceName, "Loading the model...")
-        worker = Thread({ execute(dir, file, profileId, voiceName, referenceSeconds) }, "tr-voice-lab").apply { isDaemon = true; start() }
+        worker = Thread({ execute(dir, file, profileId, voiceName, startSeconds) }, "tr-voice-lab").apply { isDaemon = true; start() }
     }
 
-    private fun execute(dir: java.io.File, file: java.io.File, profileId: String, voiceName: String, referenceSeconds: Int) {
+    private fun execute(dir: java.io.File, file: java.io.File, profileId: String, voiceName: String, startSeconds: Int) {
         try {
             val threads = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
             val t0 = System.nanoTime()
@@ -124,13 +137,14 @@ class VoiceLab(
 
                 var voiceSeconds: Double? = null
                 var used = 0.0
-                val version = "$VERSION-${referenceSeconds}s" // a different length is a different voice fingerprint
+                val version = "$VERSION-${REFERENCE_SECONDS}s-from${startSeconds}s" // a different part is a different voice fingerprint
                 val cached = library.engineData(profileId, ENGINE, version)?.let { PocketTts.decodeEmbedding(it, tts.bundle.conditioningDim) }
                 val embedding = cached ?: run {
                     _state.value = LabState.Working(voiceName, "Studying the recording...")
                     val v0 = System.nanoTime()
                     val pcm = Dsp.resample(WavIo.read(file.readBytes()), tts.bundle.sampleRate)
-                    tts.encodeVoice(pcm.samples, referenceSeconds.toFloat()).also {
+                    val from = (startSeconds * tts.bundle.sampleRate).coerceAtMost(pcm.samples.size)
+                    tts.encodeVoice(pcm.samples.copyOfRange(from, pcm.samples.size), REFERENCE_SECONDS.toFloat()).also {
                         voiceSeconds = (System.nanoTime() - v0) / 1e9
                         library.saveEngineData(profileId, ENGINE, version, PocketTts.encodeEmbedding(it))
                     }
@@ -163,7 +177,7 @@ class VoiceLab(
                     val pcm = Pcm(tts.bundle.sampleRate, all)
                     sample = pcm
                     trace("DONE")
-                    _state.value = LabState.Done(voiceName, pcm.seconds, work, loadSeconds, voiceSeconds, cached != null, used)
+                    _state.value = LabState.Done(voiceName, pcm.seconds, work, loadSeconds, voiceSeconds, cached != null, startSeconds, used)
                     player.playPcm(PLAY_KEY, pcm)
                 }
             }
@@ -178,6 +192,8 @@ class VoiceLab(
         const val ENGINE = "pocket-tts-onnx"
         const val VERSION = "1"
         const val PLAY_KEY = "voice-lab"
+        /** Longer was tried (30 s sounded worse, 45 s ran the phone out of memory). */
+        const val REFERENCE_SECONDS = 15
         val LINES = listOf(
             "The old lighthouse stood quietly above the harbour while the evening tide came in.",
             "She opened the heavy door and found a letter waiting on the small wooden table.",
