@@ -152,8 +152,8 @@ class VoiceLab(
                         val s0 = System.nanoTime()
                         val audio = gen.generate(line, voice) { cancelled }
                         if (audio == null) {
-                            trace("failed: ${t.javaClass.simpleName} ${t.message ?: ""}")
-            if (!cancelled) _state.value = LabState.Failed(voiceName, "The model made no sound for a sentence.")
+                            trace("the model made no sound for sentence ${i + 1}")
+                            if (!cancelled) _state.value = LabState.Failed(voiceName, "The model made no sound for a sentence.")
                             return
                         }
                         work += (System.nanoTime() - s0) / 1e9
