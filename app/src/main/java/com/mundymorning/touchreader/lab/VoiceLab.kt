@@ -8,6 +8,7 @@ import com.mundymorning.touchreader.core.voicestudio.WavIo
 import com.mundymorning.touchreader.studio.SamplePlayer
 import com.mundymorning.touchreader.studio.VoiceLibrary
 import com.mundymorning.touchreader.tts.Engines
+import com.mundymorning.touchreader.tts.PocketNarrator
 import com.mundymorning.touchreader.voices.VoicePackManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -149,20 +150,11 @@ class VoiceLab(
                 val loadSeconds = (System.nanoTime() - t0) / 1e9
                 if (cancelled) return
 
-                var voiceSeconds: Double? = null
+                trace("studying the recording (seconds $startSeconds to ${startSeconds + REFERENCE_SECONDS})")
+                val (embedding, studiedIn) = PocketNarrator.embeddingFor(tts, library, profileId, startSeconds)
+                val voiceSeconds = studiedIn
+                val cachedAlready = studiedIn == null
                 var used = 0.0
-                val version = "$VERSION-${REFERENCE_SECONDS}s-from${startSeconds}s" // a different part is a different voice fingerprint
-                val cached = library.engineData(profileId, ENGINE, version)?.let { PocketTts.decodeEmbedding(it, tts.bundle.conditioningDim) }
-                val embedding = cached ?: run {
-                    _state.value = LabState.Working(voiceName, "Studying the recording...")
-                    val v0 = System.nanoTime()
-                    val pcm = Dsp.resample(WavIo.read(file.readBytes()), tts.bundle.sampleRate)
-                    val from = (startSeconds * tts.bundle.sampleRate).coerceAtMost(pcm.samples.size)
-                    tts.encodeVoice(pcm.samples.copyOfRange(from, pcm.samples.size), REFERENCE_SECONDS.toFloat()).also {
-                        voiceSeconds = (System.nanoTime() - v0) / 1e9
-                        library.saveEngineData(profileId, ENGINE, version, PocketTts.encodeEmbedding(it))
-                    }
-                }
                 trace("recording studied")
                 used = embedding.frames * tts.bundle.samplesPerFrame.toDouble() / tts.bundle.sampleRate
                 if (cancelled) return
@@ -192,7 +184,7 @@ class VoiceLab(
                     val pcm = if (pacePercent >= 100) spoken else Pcm(spoken.sampleRate, TimeStretch.stretch(all, pacePercent / 100.0))
                     sample = pcm
                     trace("DONE")
-                    _state.value = LabState.Done(voiceName, spoken.seconds, work, loadSeconds, voiceSeconds, cached != null, startSeconds, used, pacePercent)
+                    _state.value = LabState.Done(voiceName, spoken.seconds, work, loadSeconds, voiceSeconds, cachedAlready, startSeconds, used, pacePercent)
                     player.playPcm(PLAY_KEY, pcm)
                 }
             }
@@ -204,12 +196,9 @@ class VoiceLab(
     }
 
     private companion object {
-        const val ENGINE = "pocket-tts-onnx"
-        const val VERSION = "1"
         const val PLAY_KEY = "voice-lab"
         const val PREFS = "pocket-lab-prefs"
-        /** Longer was tried (30 s sounded worse, 45 s ran the phone out of memory). */
-        const val REFERENCE_SECONDS = 15
+        private const val REFERENCE_SECONDS = PocketNarrator.REFERENCE_SECONDS
         val LINES = listOf(
             "The old lighthouse stood quietly above the harbour while the evening tide came in.",
             "She opened the heavy door and found a letter waiting on the small wooden table.",

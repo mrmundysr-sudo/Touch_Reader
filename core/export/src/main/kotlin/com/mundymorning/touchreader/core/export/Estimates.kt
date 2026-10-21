@@ -33,7 +33,14 @@ object ExportEstimator {
     fun renderSeconds(audioSeconds: Double, rtf: Double): Double = audioSeconds * rtf
 
     /** A timing taken on this phone: the neural voice at [steps], with or without voice conversion. */
-    data class Measurement(val steps: Int, val custom: Boolean, val rtf: Double)
+    data class Measurement(val steps: Int, val custom: Boolean, val rtf: Double, val engine: String = ENGINE_SUPERTONIC)
+
+    const val ENGINE_SUPERTONIC = "supertonic"
+    /** Saved voices made by copying the voice (Pocket TTS): one timing per quality level. */
+    const val ENGINE_POCKET = "pocket"
+
+    /** Assumed time of Better quality over Faster for Pocket voices until both have been timed on this phone (the extra work is small flow-network steps). */
+    const val POCKET_BETTER_OVER_FASTER = 1.15
 
     /** From CI: 4 steps took about 0.55x the time of 8 steps. */
     const val STEPS_4_OVER_8 = 0.55
@@ -45,7 +52,14 @@ object ExportEstimator {
      * Best guess of the speed for ([steps], [custom]) given what has been measured. Prefers an exact timing;
      * otherwise scales the nearest one using the ratios above. Returns null when nothing has been measured.
      */
-    fun predictRtf(known: List<Measurement>, steps: Int, custom: Boolean): Double? {
+    fun predictRtf(all: List<Measurement>, steps: Int, custom: Boolean, engine: String = ENGINE_SUPERTONIC): Double? {
+        if (engine == ENGINE_POCKET) {
+            val pocket = all.filter { it.engine == ENGINE_POCKET }
+            pocket.firstOrNull { it.steps == steps }?.let { return it.rtf }
+            val other = pocket.firstOrNull() ?: return null
+            return if (steps > other.steps) other.rtf * POCKET_BETTER_OVER_FASTER else other.rtf / POCKET_BETTER_OVER_FASTER
+        }
+        val known = all.filter { it.engine != ENGINE_POCKET }
         known.firstOrNull { it.steps == steps && it.custom == custom }?.let { return it.rtf }
         val base = known.firstOrNull() ?: return null
         val stepFactor = when {

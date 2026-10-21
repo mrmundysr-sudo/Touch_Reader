@@ -39,9 +39,9 @@ class Settings(context: Context) {
     /** How fast this phone makes speech with the neural voice (built-in or converted), from timing a few sentences. */
     val speedTimings: StateFlow<List<ExportEstimator.Measurement>> = _speedTimings.asStateFlow()
     fun recordSpeed(m: ExportEstimator.Measurement) {
-        val next = _speedTimings.value.filterNot { it.steps == m.steps && it.custom == m.custom } + m
+        val next = _speedTimings.value.filterNot { it.steps == m.steps && it.custom == m.custom && it.engine == m.engine } + m
         _speedTimings.value = next
-        prefs.edit().putString("speedTimings", next.joinToString(";") { "${it.steps}:${it.custom}:${it.rtf}" }).apply()
+        prefs.edit().putString("speedTimings", next.joinToString(";") { "${it.steps}:${it.custom}:${it.rtf}:${it.engine}" }).apply()
     }
     fun clearSpeedTimings() { _speedTimings.value = emptyList(); prefs.edit().remove("speedTimings").apply() }
 
@@ -55,10 +55,10 @@ class Settings(context: Context) {
 
     private fun parseTimings(s: String): List<ExportEstimator.Measurement> = s.split(';').mapNotNull { part ->
         val f = part.split(':')
-        if (f.size != 3) return@mapNotNull null
+        if (f.size != 3 && f.size != 4) return@mapNotNull null
         val steps = f[0].toIntOrNull() ?: return@mapNotNull null
         val rtf = f[2].toDoubleOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
-        ExportEstimator.Measurement(steps, f[1].toBooleanStrictOrNull() ?: return@mapNotNull null, rtf)
+        ExportEstimator.Measurement(steps, f[1].toBooleanStrictOrNull() ?: return@mapNotNull null, rtf, f.getOrNull(3) ?: ExportEstimator.ENGINE_SUPERTONIC)
     }
 
     /** Records that the user accepted a pack's terms (pack id, version, time). */

@@ -333,6 +333,19 @@ class StoreTest {
         assertEquals(ExportStore.fingerprint(book), ExportStore.fingerprint(sampleBook()))
     }
 
+    @Test fun pocketSettingsRoundTripAndOldManifestsReadAsOpenvoice() {
+        val store = ExportStore(tmpDir())
+        val book = sampleBook()
+        val m = ExportManifest(7, "T", null, ExportStore.fingerprint(book), ExportSettings("custom:abc", 8, 48, listOf(0), true, 1f, ExportSettings.CLONE_POCKET, 30, 85), 5L)
+        store.writeManifest(m)
+        assertEquals(m, store.readManifest())
+        // a manifest written before these fields existed
+        val old = java.io.File(store.root, "manifest.json")
+        old.writeText(old.readText().replace(Regex(",\\s*\"cloneEngine\"\\s*:\\s*\"pocket\"|,\\s*\"refStartSeconds\"\\s*:\\s*\\d+|,\\s*\"pacePercent\"\\s*:\\s*\\d+"), ""))
+        val back = store.readManifest()!!.settings
+        assertEquals(ExportSettings.CLONE_OPENVOICE, back.cloneEngine); assertEquals(0, back.refStartSeconds); assertEquals(100, back.pacePercent)
+    }
+
     @Test fun leftoverTempFilesAreRemovedOnOpen() {
         val dir = tmpDir()
         File(dir, "chunks").mkdirs()
@@ -391,6 +404,17 @@ class EstimatesTest {
         val small = ExportEstimator.audioSeconds(sampleBook(1), listOf(0))
         val big = ExportEstimator.audioSeconds(sampleBook(3), listOf(0, 1, 2))
         assertTrue(small > 0 && big > 2.5 * small)
+    }
+
+    @Test fun pocketPredictionsAreSeparateFromTheOtherVoiceTimings() {
+        val sup = listOf(ExportEstimator.Measurement(8, false, 2.0))
+        assertNull(ExportEstimator.predictRtf(sup, 4, true, ExportEstimator.ENGINE_POCKET))
+        val k = sup + ExportEstimator.Measurement(4, true, 0.9, ExportEstimator.ENGINE_POCKET)
+        assertEquals(0.9, ExportEstimator.predictRtf(k, 4, true, ExportEstimator.ENGINE_POCKET)!!, 1e-9)
+        assertEquals(0.9 * ExportEstimator.POCKET_BETTER_OVER_FASTER, ExportEstimator.predictRtf(k, 8, true, ExportEstimator.ENGINE_POCKET)!!, 1e-9)
+        // Pocket timings must not leak into the built-in / converted predictions
+        assertEquals(2.0, ExportEstimator.predictRtf(k, 8, false)!!, 1e-9)
+        assertEquals(2.0 * ExportEstimator.CUSTOM_OVER_BUILTIN, ExportEstimator.predictRtf(k, 8, true)!!, 1e-9)
     }
 
     @Test fun predictionsUseExactTimingsThenRatios() {

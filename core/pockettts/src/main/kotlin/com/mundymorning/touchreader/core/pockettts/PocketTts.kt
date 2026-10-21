@@ -1,6 +1,7 @@
 package com.mundymorning.touchreader.core.pockettts
 
 import com.mundymorning.touchreader.core.audio.Synthesizer
+import com.mundymorning.touchreader.core.audio.TimeStretch
 import java.io.File
 
 /** A voice taken from a recording: what the encoder made of it, ready to be saved with the voice profile. */
@@ -46,13 +47,14 @@ class PocketTts private constructor(
 
     fun generator(temperature: Float = 0.7f, lsdSteps: Int = 1, seed: Long? = null) = PocketGenerator(bundle, text, runtime, temperature, lsdSteps, seed = seed)
 
-    /** A [Synthesizer] that speaks in [voice] (24 kHz, 16-bit). Closing it does not close the voice or the model. */
-    fun synthesizer(voice: PocketVoice, temperature: Float = 0.7f, lsdSteps: Int = 1): Synthesizer {
+    /** A [Synthesizer] that speaks in [voice] (24 kHz, 16-bit), slowed to [pace] (1.0 = as spoken) without changing pitch. Closing it does not close the voice or the model. */
+    fun synthesizer(voice: PocketVoice, temperature: Float = 0.7f, lsdSteps: Int = 1, pace: Double = 1.0): Synthesizer {
         val g = generator(temperature, lsdSteps)
         return object : Synthesizer {
             override val sampleRate: Int get() = bundle.sampleRate
             override fun synthesize(text: String, speed: Float, isCancelled: () -> Boolean): ShortArray {
-                val f = g.generate(text, voice, isCancelled) ?: return ShortArray(0)
+                val raw = g.generate(text, voice, isCancelled) ?: return ShortArray(0)
+                val f = if (pace < 1.0) TimeStretch.stretch(raw, pace) else raw
                 return ShortArray(f.size) { (f[it] * 32767f).coerceIn(-32768f, 32767f).toInt().toShort() }
             }
         }

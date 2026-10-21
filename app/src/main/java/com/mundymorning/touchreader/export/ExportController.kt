@@ -21,6 +21,7 @@ import com.mundymorning.touchreader.playback.PlaybackController
 import com.mundymorning.touchreader.studio.VoiceLibrary
 import com.mundymorning.touchreader.tts.Engines
 import com.mundymorning.touchreader.tts.NeuralVoice
+import com.mundymorning.touchreader.tts.PocketNarrator
 import com.mundymorning.touchreader.voices.VoicePackManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,6 +70,7 @@ class ExportController(
 
     val neuralInstalled: Boolean get() = packs.installedDir(Engines.NEURAL_PACK_ID) != null
     val converterInstalled: Boolean get() = packs.installedDir(Engines.CONVERTER_PACK_ID) != null
+    val pocketInstalled: Boolean get() = packs.installedDir(Engines.POCKET_PACK_ID) != null
 
     suspend fun loadBook(docId: Long): ReaderBook? = withContext(Dispatchers.IO) {
         synchronized(books) { books[docId] }?.let { return@withContext it }
@@ -114,15 +116,19 @@ class ExportController(
         fun publish(st: ExportStatus) { _status.value = st; onUpdate(st) }
         publish(ExportStatus(docId, title, ExportPhase.LOADING, message = "Loading the voice. This can take a minute..."))
         var voice: NeuralVoice? = null
+        var narrator: PocketNarrator? = null
         playback.neuralBlocked = true
         try {
             val book = runBlocking { loadBook(docId) } ?: return publish(ExportStatus(docId, title, ExportPhase.FAILED, message = "This document could not be opened."))
             val store = storeFor(docId, forWriting = true)
             val plan = ExportPlanner.plan(book, s)
             if (plan.isEmpty()) return publish(ExportStatus(docId, title, ExportPhase.FAILED, message = "Nothing to render: the chosen chapters have no text."))
-            val packDir = packs.installedDir(Engines.NEURAL_PACK_ID)
-                ?: return publish(ExportStatus(docId, title, ExportPhase.FAILED, message = "The neural voice is not installed. Install it in the Voices tab."))
             val custom = s.voice.startsWith(Engines.CUSTOM_PREFIX)
+            val pocket = custom && s.cloneEngine == ExportSettings.CLONE_POCKET
+            val packDir = packs.installedDir(Engines.NEURAL_PACK_ID)
+            if (!pocket && packDir == null) return publish(ExportStatus(docId, title, ExportPhase.FAILED, message = "The neural voice is not installed. Install it in the Voices tab."))
+            val pocketDir = if (pocket) packs.installedDir(Engines.POCKET_PACK_ID) else null
+            if (pocket && pocketDir == null) return publish(ExportStatus(docId, title, ExportPhase.FAILED, message = "The voice lab download (Pocket TTS) is not installed. Install it in the Voices tab."))
             val engine: ExportEngine
             if (store.pending(plan).isEmpty()) {
                 engine = ExportEngine(book, plan, s, store, object : com.mundymorning.touchreader.core.audio.Synthesizer {
@@ -131,8 +137,15 @@ class ExportController(
                 }, AacEncoder())
             } else {
                 runBlocking(Dispatchers.Main.immediate) { playback.releaseForExport() }
-                voice = NeuralVoice.load(packDir, if (custom) packs.installedDir(Engines.CONVERTER_PACK_ID) else null, library, s.steps, s.voice)
-                engine = ExportEngine(book, plan, s, store, voice.synthesizer, AacEncoder())
+                if (pocket) {
+                    val n = PocketNarrator.load(pocketDir!!, library, s.voice.removePrefix(Engines.CUSTOM_PREFIX), s.refStartSeconds, pocketSteps(s.steps), s.pacePercent / 100.0)
+                    narrator = n
+                    engine = ExportEngine(book, plan, s, store, n.synthesizer, AacEncoder())
+                } else {
+                    val v = NeuralVoice.load(packDir!!, if (custom) packs.installedDir(Engines.CONVERTER_PACK_ID) else null, library, s.steps, s.voice)
+                    voice = v
+                    engine = ExportEngine(book, plan, s, store, v.synthesizer, AacEncoder())
+                }
             }
             val guard = BatteryGuard(app, settings) { stopReason = it }
             var lastRtf: Double? = null
@@ -140,7 +153,7 @@ class ExportController(
                 if (p.audioSeconds > 0) lastRtf = p.rtf
                 publish(ExportStatus(docId, title, ExportPhase.RENDERING, progress = p))
             }
-            lastRtf?.let { settings.recordSpeed(ExportEstimator.Measurement(s.steps, custom, it)) }
+            lastRtf?.let { settings.recordSpeed(ExportEstimator.Measurement(s.steps, custom, it, if (pocket) ExportEstimator.ENGINE_POCKET else ExportEstimator.ENGINE_SUPERTONIC)) }
             when (result) {
                 is RunResult.Completed -> {
                     publish(ExportStatus(docId, title, ExportPhase.ASSEMBLING, message = "Putting the audiobook file together..."))
@@ -156,6 +169,7 @@ class ExportController(
             publish(ExportStatus(docId, title, ExportPhase.FAILED, message = msg))
         } finally {
             runCatching { voice?.release() }
+            runCatching { narrator?.close() }
             runCatching { runBlocking(Dispatchers.Main.immediate) { playback.unblockNeural() } }
         }
     }
@@ -193,19 +207,19 @@ class ExportController(
     }
 
     /** Times this phone with a voice and remembers the result (used for the time estimates). */
-    suspend fun testSpeed(voiceName: String, steps: Int): String? {
+    suspend fun testSpeed(voiceName: String, steps: Int, cloneEngine: String = ExportSettings.CLONE_OPENVOICE, refStartSeconds: Int = 0): String? {
         if (_status.value.running) return "Wait for the audiobook that is being made."
-        val packDir = packs.installedDir(Engines.NEURAL_PACK_ID) ?: return "Install the neural voice first."
         val custom = voiceName.startsWith(Engines.CUSTOM_PREFIX)
+        val pocket = custom && cloneEngine == ExportSettings.CLONE_POCKET
+        val packDir = packs.installedDir(Engines.NEURAL_PACK_ID)
+        if (!pocket && packDir == null) return "Install the neural voice first."
+        val pocketDir = if (pocket) packs.installedDir(Engines.POCKET_PACK_ID) ?: return "Install the voice lab download first." else null
         _status.value = ExportStatus(phase = ExportPhase.TESTING, message = "Testing this phone's speed. This takes about a minute...")
         playback.neuralBlocked = true
         return try {
             withContext(Dispatchers.Default) {
                 withContext(Dispatchers.Main.immediate) { playback.releaseForExport() }
-                val v = NeuralVoice.load(packDir, if (custom) packs.installedDir(Engines.CONVERTER_PACK_ID) else null, library, steps, voiceName)
-                try {
-                    var rtf: Double? = null
-                    val synth = v.synthesizer
+                fun measure(synth: com.mundymorning.touchreader.core.audio.Synthesizer): Double? {
                     var work = 0.0; var audio = 0.0
                     for ((i, t) in TEST_SENTENCES.withIndex()) {
                         val t0 = System.nanoTime()
@@ -214,21 +228,33 @@ class ExportController(
                         if (i == 0) continue // warm-up (also prepares a saved voice's fingerprint)
                         work += sec; audio += pcm.size.toDouble() / synth.sampleRate
                     }
-                    if (audio > 0) rtf = work / audio
-                    rtf?.let { settings.recordSpeed(ExportEstimator.Measurement(steps, custom, it)) }
-                } finally { v.release() }
+                    return if (audio > 0) work / audio else null
+                }
+                if (pocket) {
+                    PocketNarrator.load(pocketDir!!, library, voiceName.removePrefix(Engines.CUSTOM_PREFIX), refStartSeconds, pocketSteps(steps), 1.0).use { n ->
+                        measure(n.synthesizer)?.let { settings.recordSpeed(ExportEstimator.Measurement(steps, true, it, ExportEstimator.ENGINE_POCKET)) }
+                    }
+                } else {
+                    val v = NeuralVoice.load(packDir!!, if (custom) packs.installedDir(Engines.CONVERTER_PACK_ID) else null, library, steps, voiceName)
+                    try {
+                        measure(v.synthesizer)?.let { settings.recordSpeed(ExportEstimator.Measurement(steps, custom, it)) }
+                    } finally { v.release() }
+                }
             }
             null
         } catch (t: Throwable) {
-            if (t is OutOfMemoryError) "Not enough memory to test with this voice." else "The test failed (${t.javaClass.simpleName})."
+            if (t is OutOfMemoryError) "Not enough memory to test with this voice." else "The test failed (${t.javaClass.simpleName}: ${t.message ?: ""})."
         } finally {
             withContext(Dispatchers.Main.immediate) { playback.unblockNeural() }
             _status.value = ExportStatus()
         }
     }
 
-    private companion object {
-        val TEST_SENTENCES = listOf(
+    companion object {
+        /** Pocket voices: Faster = 1 flow step per frame, Better quality = 2 (not yet judged by ear). */
+        fun pocketSteps(steps: Int) = if (steps <= 4) 1 else 2
+
+        private val TEST_SENTENCES = listOf(
             "The old lighthouse stood quietly above the harbour while the evening tide came in.",
             "She opened the heavy door and found a letter waiting on the small wooden table.",
             "Nobody in the village could remember when the clock had last told the right time.",

@@ -14,7 +14,18 @@ data class ExportSettings(
     /** Speak each chapter's title before its text. */
     val announceChapters: Boolean = true,
     val speed: Float = 1f,
-)
+    /** How a saved voice is made: [CLONE_OPENVOICE] (built-in voice with its tone changed) or [CLONE_POCKET] (copies the voice). Fixed for the whole book. */
+    val cloneEngine: String = CLONE_OPENVOICE,
+    /** Pocket voices: which 15 seconds of the saved recording the voice is copied from (start, in seconds). */
+    val refStartSeconds: Int = 0,
+    /** Pocket voices: 100 = as spoken, lower = slowed down afterwards without changing pitch. */
+    val pacePercent: Int = 100,
+) {
+    companion object {
+        const val CLONE_OPENVOICE = "openvoice"
+        const val CLONE_POCKET = "pocket"
+    }
+}
 
 /** One independently saved piece of the audiobook: a few sentences of one chapter. */
 data class ChunkSpec(val chapter: Int, val index: Int, val first: Int, val last: Int, val withTitle: Boolean) {

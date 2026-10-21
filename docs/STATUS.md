@@ -126,7 +126,8 @@ Why: OpenVoice conversion only gets the tone colour (voice-match 0.87 but judged
 - Voice lab has a Pace choice (100/95/90/85/80%) that slows the result with a pitch-preserving time-stretch (WSOLA, JVM-tested for length, pitch and level; not yet judged by ear), and remembers the last part and pace used per voice.
 - Voice lab copies the voice from 15 s of the recording; you choose which 15 s (listen first). Tried on one OnePlus phone with one voice: 30 s sounded worse than 15 s (one listener), 45 s ran the phone out of memory (~5 GB) and was removed.
 - App: new "Voice lab" download (165 MB) in the Voices tab; once installed, each saved voice gets "Try in voice lab". It makes a 3-sentence sample, plays it and shows timings. Nothing else in the app uses it. The voice analysis is cached in the voice profile.
-- Decision pending: only if the user hears a good result does Pocket TTS become an export voice.
+- The user heard the lab output on a OnePlus and judged it much closer to the real voice than the older method; pace was slightly fast (hence the Pace control).
+- Wired into audiobook export as the custom-voice option (when the lab download is installed): a saved voice is copied by Pocket TTS from the part and pace last chosen in the lab (stored in the book's settings, so a stopped book resumes with the same voice). Books started earlier with the older converter keep using it. Faster = 1 flow step per frame, Better quality = 2 (NOT compared by ear). Time estimates for Pocket voices come from their own timings on the phone (until timed, Better is assumed 15% slower than Faster). Live reading in a saved voice still uses the older converter. Not yet run on a phone: a full export with Pocket, resume after Stop, battery/heat over hours.
 
 ## Known limitations / risks
 

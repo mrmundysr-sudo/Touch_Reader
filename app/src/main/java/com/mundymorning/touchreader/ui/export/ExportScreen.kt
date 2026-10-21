@@ -76,6 +76,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
 
     val neuralDir = remember(status.phase) { container.voicePacks.installedDir(Engines.NEURAL_PACK_ID) }
     val converterInstalled = remember(status.phase) { container.voicePacks.installedDir(Engines.CONVERTER_PACK_ID) != null }
+    val pocketInstalled = remember(status.phase) { container.voicePacks.installedDir(Engines.POCKET_PACK_ID) != null }
     val presets = remember(neuralDir) { neuralDir?.let { NeuralVoice.presetNames(it) }.orEmpty() }
 
     LaunchedEffect(docId) {
@@ -112,9 +113,21 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
         }
     }
 
+    /** The settings for a new audiobook: a saved voice is copied by Pocket TTS when that download is installed (using the part and pace last chosen in the voice lab), otherwise toned by the older converter. */
+    fun newSettings(chapters: List<Int>): ExportSettings {
+        val customVoice = voice.startsWith(Engines.CUSTOM_PREFIX)
+        val pocketVoice = customVoice && pocketInstalled
+        val last = if (pocketVoice) container.voiceLab.lastChoice(voice.removePrefix(Engines.CUSTOM_PREFIX)) else null
+        return ExportSettings(
+            voice, steps, kbps, chapters, announceChapters = true,
+            cloneEngine = if (pocketVoice) ExportSettings.CLONE_POCKET else ExportSettings.CLONE_OPENVOICE,
+            refStartSeconds = last?.first ?: 0, pacePercent = last?.second ?: 100,
+        )
+    }
+
     fun startExport(restart: Boolean) {
         val b = book ?: return
-        val s = ExportSettings(voice, steps, kbps, selected.sorted().filter { it in b.chapters.indices }, announceChapters = true)
+        val s = newSettings(selected.sorted().filter { it in b.chapters.indices })
         scope.launch {
             message = exporter.begin(docId, title, s, restart)
             if (message == null) startingOver = false
@@ -128,8 +141,10 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
     val b = book
     val m = manifest
     val editing = m == null || startingOver
-    val active = if (editing) ExportSettings(voice, steps, kbps, selected.sorted(), true) else m!!.settings
+    val active = if (editing) newSettings(selected.sorted()) else m!!.settings
     val custom = active.voice.startsWith(Engines.CUSTOM_PREFIX)
+    val pocketActive = custom && active.cloneEngine == ExportSettings.CLONE_POCKET
+    val engineKind = if (pocketActive) ExportEstimator.ENGINE_POCKET else ExportEstimator.ENGINE_SUPERTONIC
     val busyElsewhere = status.running && status.phase != ExportPhase.TESTING && status.docId != docId
     val rendering = status.running && status.docId == docId
 
@@ -215,29 +230,46 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                             }
                             DropdownMenu(open, { open = false }) {
                                 presets.forEach { p -> DropdownMenuItem({ Text(voiceLabel(p)) }, { voice = p; open = false }) }
-                                if (converterInstalled) profiles.forEach { pr ->
-                                    DropdownMenuItem({ Text("★ ${pr.name} (your voice) — takes much longer") }, { voice = Engines.CUSTOM_PREFIX + pr.id; open = false })
+                                if (converterInstalled || pocketInstalled) profiles.forEach { pr ->
+                                    DropdownMenuItem({ Text("★ ${pr.name} (your voice) — takes longer") }, { voice = Engines.CUSTOM_PREFIX + pr.id; open = false })
                                 }
                             }
                         }
                         if (custom) {
-                            Text(
-                                "Your own voice takes much longer: every sentence is spoken by a built-in voice first and then its tone is changed towards yours. The result has a similar tone, not an exact copy: accent, pace and style stay those of the built-in voice.",
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
-                            )
-                            OutlinedButton({ scope.launch { matchReport = exporter.checkVoiceMatch(voice) } }, enabled = !status.running) {
-                                Text("Check how close this voice is (a minute or two)")
+                            if (pocketActive) {
+                                val last = container.voiceLab.lastChoice(voice.removePrefix(Engines.CUSTOM_PREFIX))
+                                Text(
+                                    "Your own voice is copied from your saved recording (15 seconds starting at ${last?.first ?: 0} s, pace ${last?.second ?: 100}%: the choices last made in the voice lab on the Voices tab). " +
+                                        "It takes much longer than a built-in voice, and this phone needs to be timed to know how long.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
+                                )
+                            } else {
+                                Text(
+                                    "Your own voice takes much longer: every sentence is spoken by a built-in voice first and then its tone is changed towards yours. The result has a similar tone, not an exact copy: accent, pace and style stay those of the built-in voice. For a closer copy, install the voice lab download in the Voices tab.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
+                                )
+                                OutlinedButton({ scope.launch { matchReport = exporter.checkVoiceMatch(voice) } }, enabled = !status.running) {
+                                    Text("Check how close this voice is (a minute or two)")
+                                }
+                                matchReport?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                             }
-                            matchReport?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         }
-                        if (!converterInstalled && profiles.isNotEmpty()) Text("To use your own voice, install the Voice cloning add-on in the Voices tab.", style = MaterialTheme.typography.bodySmall)
+                        if (!converterInstalled && !pocketInstalled && profiles.isNotEmpty()) Text("To use your own voice, install the voice lab download (or the Voice cloning add-on) in the Voices tab.", style = MaterialTheme.typography.bodySmall)
 
                         Text("Speed or quality", fontWeight = FontWeight.Bold)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(steps == 4, { steps = 4 }, { Text("Faster") })
                             FilterChip(steps == 8, { steps = 8 }, { Text("Better quality") })
                         }
-                        Text(if (steps == 4) "About twice as fast. The voice is slightly less polished." else "Slower, with the best sound this voice can make.", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            when {
+                                pocketActive && steps == 4 -> "Faster. Better quality adds one extra step per sound frame; it has not yet been compared by ear."
+                                pocketActive -> "Slightly slower (about 15% more work is assumed until timed). Not yet compared by ear against Faster."
+                                steps == 4 -> "About twice as fast. The voice is slightly less polished."
+                                else -> "Slower, with the best sound this voice can make."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
 
                         Text("File size", fontWeight = FontWeight.Bold)
                         val seconds = ExportEstimator.audioSeconds(b, selected.toList())
@@ -251,14 +283,14 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                 }
                 item {
                     val seconds = ExportEstimator.audioSeconds(b, selected.toList())
-                    val rtf = ExportEstimator.predictRtf(timings, steps, custom)
+                    val rtf = ExportEstimator.predictRtf(timings, steps, custom, engineKind)
                     Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Estimate", fontWeight = FontWeight.Bold)
                         Text("About ${formatDuration(seconds)} of audio · ${ExportEstimator.sizeBytes(seconds, kbps) / 1_000_000} MB")
                         if (rtf != null) {
                             val work = ExportEstimator.renderSeconds(seconds, rtf)
                             Text("About ${formatDuration(work)} to make on this phone", fontWeight = FontWeight.Bold)
-                            val exact = timings.any { it.steps == steps && it.custom == custom }
+                            val exact = timings.any { it.steps == steps && it.custom == custom && it.engine == engineKind }
                             Text(
                                 (if (exact) "Based on timing this voice on this phone." else "Estimated from other timings on this phone; it gets more exact once this voice has been timed.") +
                                     " It runs in the background and can be stopped and continued.",
@@ -270,8 +302,8 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                         }
                         if (status.phase == ExportPhase.TESTING) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(status.message.orEmpty(), style = MaterialTheme.typography.bodySmall) }
                         else {
-                            val exact = timings.any { it.steps == steps && it.custom == custom }
-                            OutlinedButton({ scope.launch { message = exporter.testSpeed(voice, steps) } }, enabled = !status.running) {
+                            val exact = timings.any { it.steps == steps && it.custom == custom && it.engine == engineKind }
+                            OutlinedButton({ scope.launch { message = exporter.testSpeed(voice, steps, active.cloneEngine, active.refStartSeconds) } }, enabled = !status.running) {
                                 Text(if (exact) "Test again (about a minute)" else "Test this phone's speed (about a minute)")
                             }
                         }
