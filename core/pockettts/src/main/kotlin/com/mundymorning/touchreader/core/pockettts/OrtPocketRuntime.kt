@@ -79,17 +79,32 @@ class OrtPocketRuntime(private val bundle: PocketBundle, private val dir: File, 
         }
     }
 
-    override fun prepareVoice(embeddings: FloatArray): PocketVoice {
-        val frames = embeddings.size / bundle.conditioningDim
+    override fun prepareVoice(embeddings: FloatArray): PocketVoice = prepareVoice(embeddings, PREPARE_CHUNK_FRAMES)
+
+    /**
+     * Feeds the voice through the transformer [chunkFrames] frames at a time. The transformer is causal and keeps a
+     * cache, so this gives the same result as one call, but memory stays small: on a phone, feeding a 45 s voice
+     * (563 frames) in one call used almost 5 GB and the app was killed.
+     */
+    fun prepareVoice(embeddings: FloatArray, chunkFrames: Int): PocketVoice {
+        val dim = bundle.conditioningDim
+        val frames = embeddings.size / dim
+        require(frames > 0) { "No voice frames" }
         val start = initialState(bundle.flowState)
+        val chain = StateChain(bundle.flowState, start)
         try {
-            floats(embeddings, longArrayOf(1, frames.toLong(), bundle.conditioningDim.toLong())).use { text ->
-                val result = flowMain.run(mapOf("sequence" to emptySequence, "text_embeddings" to text) + start)
-                val chain = StateChain(bundle.flowState, start)
-                chain.advance(result, 2)
-                val (tensors, owner) = chain.detach()
-                return OrtVoice(tensors, owner)
+            var at = 0
+            while (at < frames) {
+                val n = minOf(chunkFrames, frames - at)
+                floats(embeddings.copyOfRange(at * dim, (at + n) * dim), longArrayOf(1, n.toLong(), dim.toLong())).use { text ->
+                    chain.advance(flowMain.run(mapOf("sequence" to emptySequence, "text_embeddings" to text) + chain.tensors), 2)
+                }
+                at += n
             }
+            val (tensors, owner) = chain.detach()
+            return OrtVoice(tensors, owner)
+        } catch (e: Throwable) {
+            chain.close(); throw e
         } finally {
             start.values.forEach { it.close() }
         }
@@ -178,5 +193,9 @@ class OrtPocketRuntime(private val bundle: PocketBundle, private val dir: File, 
         listOf(mimiEncoder, textConditioner, flowMain, flowNet, mimiDecoder).forEach { runCatching { it.close() } }
         sharedStart.forEach { it.close() }
         runCatching { options.close() }
+    }
+
+    companion object {
+        const val PREPARE_CHUNK_FRAMES = 64
     }
 }

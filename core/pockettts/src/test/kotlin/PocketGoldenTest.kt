@@ -127,6 +127,22 @@ class PocketGoldenTest {
         }
     }
 
+    @Test fun voiceInChunksGivesTheSameResultAsAllAtOnce() {
+        val (tts, _, g) = load()
+        tts.use {
+            val rt = it.runtime as OrtPocketRuntime
+            val m = model(g)
+            val ids = LongArray(m.getJSONArray("token_ids").length()) { k -> m.getJSONArray("token_ids").getLong(k) }
+            val enc = readFloats(File(g, "enc.bin"))
+            fun first(chunk: Int): FloatArray = rt.prepareVoice(enc, chunk).use { v -> rt.newSentence(v, ids).use { s -> s.step(null).conditioning } }
+            val whole = first(100000)
+            val chunked = first(16)
+            val d = maxAbs(whole, chunked)
+            println("VOICE_CHUNKS frames=${enc.size / it.bundle.conditioningDim} maxdiff=$d")
+            assertTrue(d < 1e-3, "chunked voice differs from one-shot by $d")
+        }
+    }
+
     @Test fun textConditionerMatches() {
         val (tts, _, g) = load()
         tts.use {
