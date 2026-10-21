@@ -45,7 +45,14 @@ jobs:
             --pattern vc.onnx --pattern se.onnx --pattern source_embeddings.json --pattern converter_config.json --pattern LICENSE.txt --pattern NOTICE.txt
           python3 scripts/check_bundle.py openvoice-converter-v1
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleDebug 2>&1 | tee build.log || {
+            echo "=== COMPILER ERRORS ==="
+            grep -E "^e: |error:" build.log | head -60
+            echo "=== END COMPILER ERRORS ==="
+            exit 1
+          }
       - name: Upload test reports
         if: always()
         continue-on-error: true
