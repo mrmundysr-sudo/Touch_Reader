@@ -26,6 +26,18 @@ class BufferedSpeechEngine(
     /** Invoked (once per run) with the average RTF when synthesis is too slow to keep up. */
     @Volatile var onSlow: ((Double) -> Unit)? = null
 
+    /**
+     * Invoked once per engine (from the synthesis thread) with seconds of work per second of speech, measured on
+     * the sentences actually being narrated: the first sentence (model warm-up) is left out and the next
+     * [SPEED_SAMPLES] are averaged. Lets the app learn how fast this phone is without a separate speed test.
+     */
+    @Volatile var onSpeedKnown: ((Double) -> Unit)? = null
+    private var speedWork = 0.0
+    private var speedAudio = 0.0
+    private var speedSamples = 0
+    private var seen = 0
+    @Volatile private var speedReported = false
+
     val stats = SynthesisStats()
 
     private class Request(val gen: Int, val id: Int, val text: String, val enqueuedAt: Long, val first: Boolean)
@@ -35,6 +47,8 @@ class BufferedSpeechEngine(
     @Volatile private var speed = 1f
     @Volatile private var released = false
     @Volatile private var slowNotified = false
+    /** Only one thing may use the synthesizer at a time: the synthesis thread, or a speed [measure]. */
+    private val synthLock = Any()
     private val inFlight = AtomicInteger(0)
     private val requests = LinkedBlockingQueue<Request>()
     private val ready = ArrayBlockingQueue<Ready>(maxReady)
@@ -69,6 +83,26 @@ class BufferedSpeechEngine(
         synthesizer.release()
     }
 
+    /**
+     * Times how long this synthesizer takes to speak [texts] (on the calling thread, waiting for any sentence
+     * already being synthesized) and returns seconds of work per second of speech. The first text only warms
+     * the engine up and is not counted when there is more than one. Returns null if nothing could be measured.
+     */
+    fun measure(texts: List<String>, isCancelled: () -> Boolean = { false }): Double? {
+        var work = 0.0
+        var audio = 0.0
+        for ((i, text) in texts.withIndex()) {
+            if (isCancelled() || released) return null
+            val t0 = nanoTime()
+            val pcm = synchronized(synthLock) { synthesizer.synthesize(text, 1f, isCancelled) }
+            val seconds = (nanoTime() - t0) / 1e9
+            if (isCancelled()) return null
+            if (i == 0 && texts.size > 1) continue
+            work += seconds; audio += pcm.size.toDouble() / synthesizer.sampleRate
+        }
+        return if (audio > 0) work / audio else null
+    }
+
     private fun current(r: Request) = r.gen == generation && !released
 
     private fun synthLoop() {
@@ -77,7 +111,7 @@ class BufferedSpeechEngine(
             if (!current(req)) continue
             val t0 = nanoTime()
             val pcm = try {
-                synthesizer.synthesize(req.text, speed) { !current(req) }
+                synchronized(synthLock) { synthesizer.synthesize(req.text, speed) { !current(req) } }
             } catch (e: Exception) {
                 if (current(req)) listener?.onError(req.id, e.message ?: "Speech synthesis failed.")
                 continue
@@ -85,6 +119,7 @@ class BufferedSpeechEngine(
             if (!current(req)) continue
             val seconds = pcm.size.toDouble() / synthesizer.sampleRate
             stats.record(nanoTime() - t0, seconds)
+            noteSpeed(nanoTime() - t0, seconds)
             checkSlow()
             val item = Ready(req, pcm)
             try {
@@ -92,6 +127,13 @@ class BufferedSpeechEngine(
                 while (!ready.offer(item, 50, TimeUnit.MILLISECONDS)) if (!current(req)) break
             } catch (e: InterruptedException) { return }
         }
+    }
+
+    private fun noteSpeed(nanos: Long, audioSeconds: Double) {
+        if (speedReported || audioSeconds <= 0) return
+        if (seen++ == 0) return
+        speedWork += nanos / 1e9; speedAudio += audioSeconds; speedSamples++
+        if (speedSamples >= SPEED_SAMPLES) { speedReported = true; onSpeedKnown?.invoke(speedWork / speedAudio) }
     }
 
     private fun checkSlow() {
@@ -102,7 +144,7 @@ class BufferedSpeechEngine(
         }
     }
 
-    private companion object { const val VERY_SLOW_RTF = 3.0 }
+    private companion object { const val VERY_SLOW_RTF = 3.0; const val SPEED_SAMPLES = 2 }
 
     private fun playLoop() {
         sink.open(synthesizer.sampleRate)

@@ -5,6 +5,8 @@ import androidx.room.Room
 import com.mundymorning.touchreader.data.AppDatabase
 import com.mundymorning.touchreader.data.DocumentStore
 import com.mundymorning.touchreader.data.Settings
+import com.mundymorning.touchreader.export.AudiobookPlayer
+import com.mundymorning.touchreader.export.ExportController
 import com.mundymorning.touchreader.importer.ImportManager
 import com.mundymorning.touchreader.playback.PlaybackController
 import com.mundymorning.touchreader.studio.SamplePlayer
@@ -22,6 +24,8 @@ class AppContainer(app: Application) {
     val voicePacks = VoicePackManager(app)
     val voiceLibrary = VoiceLibrary(app)
     val controller = PlaybackController(app, db, store, settings, voicePacks, voiceLibrary)
+    val audiobook = AudiobookPlayer(app)
+    val exporter = ExportController(app, store, settings, voicePacks, voiceLibrary, controller)
     val studio = VoiceStudioSession(app, voiceLibrary)
     val samplePlayer = SamplePlayer(app.cacheDir)
 }

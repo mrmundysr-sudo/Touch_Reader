@@ -131,4 +131,50 @@ class BufferedSpeechEngineTest {
         assertTrue(e.stats.snapshot().averageRtf < 1.0)
         e.release()
     }
+
+    @Test fun measureReportsRealTimeFactorAndSkipsTheWarmUp() {
+        // each call: 0.1 s of audio (100 samples @ 1 kHz) and ~200 ms of work -> RTF ~2; the first call is slower but excluded
+        var calls = 0
+        val synth = object : Synthesizer {
+            override val sampleRate = 1000
+            override fun synthesize(text: String, speed: Float, isCancelled: () -> Boolean): ShortArray {
+                Thread.sleep(if (calls++ == 0) 600 else 200); return ShortArray(100)
+            }
+        }
+        val e = BufferedSpeechEngine(synth, FakeSink())
+        val rtf = e.measure(listOf("warm up", "one", "two"))!!
+        assertTrue(rtf in 1.7..2.8, "rtf=$rtf")
+        assertEquals(3, calls)
+        e.release()
+    }
+
+    @Test fun measureWaitsForSynthesisInProgressAndCanBeCancelled() {
+        val synth = FakeSynth(delayMs = 150); val rec = Recorder()
+        val e = BufferedSpeechEngine(synth, FakeSink()).also { it.listener = rec }
+        e.enqueue(1, "a")
+        assertNull(e.measure(listOf("x", "y")) { true })
+        awaitUntil { rec.events.contains("done1") }
+        assertNotNull(e.measure(listOf("x")))
+        e.release()
+        assertNull(e.measure(listOf("x")))
+    }
+
+    @Test fun speedIsReportedOnceFromTheSentencesBeingNarrated() {
+        // 0.1 s of audio per sentence; the first takes 500 ms (warm-up), the rest ~150 ms -> RTF ~1.5
+        var calls = 0
+        val synth = object : Synthesizer {
+            override val sampleRate = 1000
+            override fun synthesize(text: String, speed: Float, isCancelled: () -> Boolean): ShortArray {
+                Thread.sleep(if (calls++ == 0) 500 else 150); return ShortArray(100)
+            }
+        }
+        val rec = Recorder(); val seen = CopyOnWriteArrayList<Double>()
+        val e = BufferedSpeechEngine(synth, FakeSink()).also { it.listener = rec }
+        e.onSpeedKnown = { seen += it }
+        (1..6).forEach { e.enqueue(it, "s$it") }
+        awaitUntil(8000) { rec.events.contains("done6") }
+        assertEquals(1, seen.size, "reported exactly once")
+        assertTrue(seen[0] in 1.2..2.2, "rtf=${seen[0]} (warm-up sentence excluded)")
+        e.release()
+    }
 }

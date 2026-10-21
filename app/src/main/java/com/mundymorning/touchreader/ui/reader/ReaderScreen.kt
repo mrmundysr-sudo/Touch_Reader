@@ -48,7 +48,7 @@ private enum class Sheet { NONE, CHAPTERS, BOOKMARKS, VOICE, SPEED, SLEEP, TEXT 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReaderScreen(container: AppContainer, docId: Long, autoPlay: Boolean, onBack: () -> Unit) {
+fun ReaderScreen(container: AppContainer, docId: Long, autoPlay: Boolean, onBack: () -> Unit, onExport: (Long) -> Unit) {
     val controller = container.controller
     val ui by controller.ui.collectAsState()
     val fontSize by container.settings.fontSize.collectAsState()
@@ -71,14 +71,26 @@ fun ReaderScreen(container: AppContainer, docId: Long, autoPlay: Boolean, onBack
         if (ui.book != null) viewChapter = ui.position.chapter
     }
     LaunchedEffect(ui.error) { ui.error?.let { snackbar.showSnackbar(it) } }
-    LaunchedEffect(ui.slowEngine) {
-        if (ui.slowEngine) {
-            val r = snackbar.showSnackbar(
-                "The neural voice is too slow on this phone to keep up.",
-                actionLabel = "Use system voice", withDismissAction = true, duration = SnackbarDuration.Indefinite,
-            )
-            if (r == SnackbarResult.ActionPerformed) controller.switchEngine(null) else controller.dismissSlowNotice()
-        }
+    ui.speedAdvice?.let { advice ->
+        AlertDialog(
+            onDismissRequest = { controller.dismissSpeedAdvice(forever = false) },
+            title = { Text("Too slow for live reading on this phone") },
+            text = {
+                Text(
+                    "With ${if (advice.custom) "your voice" else "the neural voice"} this phone needs about ${"%.1f".format(advice.rtf)} seconds to make " +
+                        "1 second of speech, so live reading will keep pausing.\n\n" +
+                        "You can create an audiobook now and listen to it later. It can run in the background while the phone charges, " +
+                        "and you can stop and carry on whenever you like."
+                )
+            },
+            confirmButton = { TextButton({ controller.dismissSpeedAdvice(false); onExport(docId) }) { Text("Create audiobook") } },
+            dismissButton = {
+                Row {
+                    TextButton({ controller.dismissSpeedAdvice(false); controller.switchEngine(null) }) { Text("Use system voice") }
+                    TextButton({ controller.dismissSpeedAdvice(true) }) { Text("Keep trying") }
+                }
+            },
+        )
     }
 
     val book = ui.book
@@ -88,6 +100,7 @@ fun ReaderScreen(container: AppContainer, docId: Long, autoPlay: Boolean, onBack
                 title = { Text(ui.title.ifEmpty { "Reading" }, maxLines = 1) },
                 navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to library") } },
                 actions = {
+                    IconButton({ onExport(docId) }) { Icon(Icons.Rounded.Headphones, "Audiobook") }
                     IconButton({ sheet = Sheet.TEXT }) { Icon(Icons.Rounded.TextFields, "Text size") }
                     IconButton({ sheet = Sheet.BOOKMARKS }) { Icon(Icons.Rounded.Bookmarks, "Bookmarks") }
                     IconButton({ sheet = Sheet.CHAPTERS }) { Icon(Icons.AutoMirrored.Rounded.List, "Chapters") }

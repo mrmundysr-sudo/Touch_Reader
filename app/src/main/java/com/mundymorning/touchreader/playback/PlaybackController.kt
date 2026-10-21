@@ -9,6 +9,9 @@ import androidx.media.AudioFocusRequestCompat
 import androidx.media.AudioManagerCompat
 import com.mundymorning.touchreader.core.reader.Position
 import com.mundymorning.touchreader.core.reader.ReaderBook
+import com.mundymorning.touchreader.core.export.ExportEstimator
+import com.mundymorning.touchreader.core.export.LiveSpeed
+import com.mundymorning.touchreader.core.export.SpeedClass
 import com.mundymorning.touchreader.core.tts.NarrationSession
 import com.mundymorning.touchreader.core.tts.NarrationState
 import com.mundymorning.touchreader.data.AppDatabase
@@ -27,6 +30,9 @@ import com.mundymorning.touchreader.tts.VoiceInfo
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
+/** The neural voice takes [rtf] seconds to make one second of speech here ([custom]: with a saved voice). */
+data class SpeedAdvice(val rtf: Double, val custom: Boolean)
+
 data class PlayerUi(
     val docId: Long? = null,
     val title: String = "",
@@ -40,8 +46,8 @@ data class PlayerUi(
     val error: String? = null,
     val sleepEndsAt: Long? = null,
     val sleepEndOfChapter: Boolean = false,
-    /** The neural voice cannot keep up with real time on this phone. */
-    val slowEngine: Boolean = false,
+    /** Set when the neural voice is slower than real time on this phone; the reader offers an audiobook instead. */
+    val speedAdvice: SpeedAdvice? = null,
 ) {
     val playing get() = state == NarrationState.PLAYING
     val chapterTitle get() = book?.chapters?.getOrNull(position.chapter)?.title.orEmpty()
@@ -72,16 +78,53 @@ class PlaybackController(
     }
 
     private fun createEngine(): AppEngine {
-        if (settings.ttsEngine.value == Engines.NEURAL) {
+        if (settings.ttsEngine.value == Engines.NEURAL && !neuralBlocked) {
             val dir = packs.installedDir(Engines.NEURAL_PACK_ID)
             if (dir != null) {
-                return SupertonicAppEngine(app, dir, settings.neuralSteps.value, packs.installedDir(Engines.CONVERTER_PACK_ID), voiceLibrary).also { e ->
-                    e.onSlow = { scope.launch { _ui.update { it.copy(slowEngine = true) } } }
+                val steps = settings.neuralSteps.value
+                return SupertonicAppEngine(app, dir, steps, packs.installedDir(Engines.CONVERTER_PACK_ID), voiceLibrary).also { e ->
+                    // both callbacks run on the synthesis thread
+                    e.onSlow = { rtf -> scope.launch { learnSpeed(steps, rtf) } }
+                    e.onSpeedKnown = { rtf -> scope.launch { learnSpeed(steps, rtf) } }
                 }
             }
             settings.setTtsEngine(null) // the pack was deleted: go back to the system voice
         }
         return AndroidTtsEngine(app, settings.ttsEngine.value)
+    }
+
+    /** While an audiobook is rendering with the neural voice, live narration uses the system voice (both together would not fit in memory). */
+    @Volatile var neuralBlocked = false
+
+    /** Frees the narrator and closes the open document so the exporter can use the memory. */
+    fun releaseForExport() {
+        statusJob?.cancel()
+        closeCurrent()
+        engineFlow.value?.release()
+        engineFlow.value = null
+    }
+
+    /** Rendering ended: if narration had to fall back to the system voice meanwhile, go back to the neural voice next time. */
+    fun unblockNeural() {
+        neuralBlocked = false
+        if (settings.ttsEngine.value == Engines.NEURAL && engineFlow.value is AndroidTtsEngine && !_ui.value.playing) releaseForExport()
+    }
+
+    private fun usingCustomVoice() = (_ui.value.voiceName ?: settings.defaultVoice.value)?.startsWith(Engines.CUSTOM_PREFIX) == true
+
+    /** Remembers how fast this phone is with the current voice; if it cannot keep up with real time, tells the reader screen. */
+    private fun learnSpeed(steps: Int, rtf: Double) {
+        val custom = usingCustomVoice()
+        settings.recordSpeed(ExportEstimator.Measurement(steps, custom, rtf))
+        if (SpeedClass.classify(rtf) == LiveSpeed.TOO_SLOW && !settings.speedAdviceDismissed(steps, custom) && _ui.value.speedAdvice == null) {
+            _ui.update { it.copy(speedAdvice = SpeedAdvice(rtf, custom)) }
+        }
+    }
+
+    /** [forever]: do not offer an audiobook again for this voice setting (the Export screen stays available). */
+    fun dismissSpeedAdvice(forever: Boolean) {
+        _ui.value.speedAdvice?.let { if (forever) settings.dismissSpeedAdvice(settings.neuralSteps.value, it.custom) }
+        _ui.update { it.copy(speedAdvice = null) }
     }
 
     /** Never freeze or crash on a speech engine that will not start: fall back to the system default once. */
@@ -263,8 +306,6 @@ class PlaybackController(
         else if (_ui.value.docId != null) setVoice(name)
     }
 
-    fun dismissSlowNotice() { _ui.update { it.copy(slowEngine = false) } }
-
     /** Switch narrator engine: null = system default, a package name, or [Engines.NEURAL]. Keeps place and play state. */
     fun switchEngine(pkg: String?, voice: String? = null) {
         settings.setTtsEngine(pkg)
@@ -279,7 +320,7 @@ class PlaybackController(
         // Voice names belong to one engine, so a switch resets the narrator to that engine's default.
         e.setVoice(voice)
         ui.docId?.let { id -> scope.launch(Dispatchers.IO) { db.documents().setVoice(id, voice) } }
-        _ui.update { it.copy(voiceName = voice, state = NarrationState.IDLE, slowEngine = false) }
+        _ui.update { it.copy(voiceName = voice, state = NarrationState.IDLE, speedAdvice = null) }
         ui.book?.let { attachSession(it, ui.position) }
         if (wasPlaying) play()
     }

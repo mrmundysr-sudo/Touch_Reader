@@ -2,6 +2,7 @@ package com.mundymorning.touchreader.data
 
 import android.content.Context
 import com.mundymorning.touchreader.core.document.CleanupOptions
+import com.mundymorning.touchreader.core.export.ExportEstimator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +34,32 @@ class Settings(context: Context) {
     /** Denoising steps for the neural voice: fewer is faster, 8 is the reference quality. */
     val neuralSteps: StateFlow<Int> = _neuralSteps.asStateFlow()
     fun setNeuralSteps(n: Int) { _neuralSteps.value = n; prefs.edit().putInt("neuralSteps", n).apply() }
+
+    private val _speedTimings = MutableStateFlow(parseTimings(prefs.getString("speedTimings", "") ?: ""))
+    /** How fast this phone makes speech with the neural voice (built-in or converted), from timing a few sentences. */
+    val speedTimings: StateFlow<List<ExportEstimator.Measurement>> = _speedTimings.asStateFlow()
+    fun recordSpeed(m: ExportEstimator.Measurement) {
+        val next = _speedTimings.value.filterNot { it.steps == m.steps && it.custom == m.custom } + m
+        _speedTimings.value = next
+        prefs.edit().putString("speedTimings", next.joinToString(";") { "${it.steps}:${it.custom}:${it.rtf}" }).apply()
+    }
+    fun clearSpeedTimings() { _speedTimings.value = emptyList(); prefs.edit().remove("speedTimings").apply() }
+
+    fun speedAdviceDismissed(steps: Int, custom: Boolean) = prefs.getBoolean("speedAdviceOff_${steps}_$custom", false)
+    fun dismissSpeedAdvice(steps: Int, custom: Boolean) { prefs.edit().putBoolean("speedAdviceOff_${steps}_$custom", true).apply() }
+
+    private val _exportOnlyCharging = MutableStateFlow(prefs.getBoolean("exportOnlyCharging", true))
+    /** Pause audiobook rendering when the phone is unplugged. */
+    val exportOnlyCharging: StateFlow<Boolean> = _exportOnlyCharging.asStateFlow()
+    fun setExportOnlyCharging(v: Boolean) { _exportOnlyCharging.value = v; prefs.edit().putBoolean("exportOnlyCharging", v).apply() }
+
+    private fun parseTimings(s: String): List<ExportEstimator.Measurement> = s.split(';').mapNotNull { part ->
+        val f = part.split(':')
+        if (f.size != 3) return@mapNotNull null
+        val steps = f[0].toIntOrNull() ?: return@mapNotNull null
+        val rtf = f[2].toDoubleOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+        ExportEstimator.Measurement(steps, f[1].toBooleanStrictOrNull() ?: return@mapNotNull null, rtf)
+    }
 
     /** Records that the user accepted a pack's terms (pack id, version, time). */
     fun recordAcceptance(packId: String, version: Int) {

@@ -14,6 +14,8 @@ interface AppEngine : SpeechEngine {
     /** Short live status for the player ("Loading...", "took 12 s"); empty when the engine has nothing to say. */
     val activity: StateFlow<String> get() = NO_ACTIVITY
     fun preview(name: String, sample: String)
+    /** Seconds of work per second of speech with the current voice, measured now (blocking); null if this engine cannot say. */
+    fun measureSpeed(): Double? = null
 }
 
 /** Identifiers for the non-system engine choice stored in settings. */

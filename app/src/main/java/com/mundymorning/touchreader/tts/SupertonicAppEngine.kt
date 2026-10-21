@@ -2,16 +2,7 @@ package com.mundymorning.touchreader.tts
 
 import android.content.Context
 import com.mundymorning.touchreader.core.audio.BufferedSpeechEngine
-import com.mundymorning.touchreader.core.supertonic.SupertonicLanguages
-import com.mundymorning.touchreader.core.voiceconvert.BaseVoice
-import com.mundymorning.touchreader.core.voiceconvert.ConverterConfig
-import com.mundymorning.touchreader.core.voiceconvert.ConvertingSynthesizer
-import com.mundymorning.touchreader.core.voiceconvert.EmbeddingCodec
-import com.mundymorning.touchreader.core.voiceconvert.LazyToneConverter
-import com.mundymorning.touchreader.core.voiceconvert.OnnxToneConverter
-import com.mundymorning.touchreader.core.voicestudio.Dsp
 import com.mundymorning.touchreader.core.voicestudio.VoiceProfile
-import com.mundymorning.touchreader.core.voicestudio.WavIo
 import com.mundymorning.touchreader.studio.VoiceLibrary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,15 +11,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import com.mundymorning.touchreader.core.supertonic.SupertonicModel
-import com.mundymorning.touchreader.core.supertonic.SupertonicSynthesizer
-import com.mundymorning.touchreader.core.supertonic.VoiceStyle
 import com.mundymorning.touchreader.core.tts.SpeechEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
-import java.util.Locale
 
 /**
  * Offline neural narrator (Supertonic 3, ONNX Runtime). The model loads on a background thread; anything
@@ -74,6 +61,9 @@ class SupertonicAppEngine(
     /** Called (from a worker thread) when synthesis cannot keep up with real time. */
     @Volatile var onSlow: ((Double) -> Unit)? = null
 
+    /** Called once (from a worker thread) with how many seconds of work one second of speech takes on this phone. */
+    @Volatile var onSpeedKnown: ((Double) -> Unit)? = null
+
     private val forwarder = object : SpeechEngine.Listener {
         override fun onStart(id: Int) { listener?.onStart(id) }
         override fun onDone(id: Int) { listener?.onDone(id) }
@@ -83,13 +73,10 @@ class SupertonicAppEngine(
     private val lock = Any()
     private val pending = ArrayList<Pair<Int, String>>()
     private var buffered: BufferedSpeechEngine? = null
-    private var synth: ConvertingSynthesizer? = null
-    private var converter: LazyToneConverter? = null
-    @Volatile private var customId: String? = null
+    private var voice: NeuralVoice? = null
+    @Volatile private var requestedVoice: String? = null
     @Volatile private var released = false
     @Volatile private var speed = 1f
-    private val defaultPreset: String = if ("M1" in styleNames) "M1" else styleNames.firstOrNull() ?: "M1"
-    @Volatile private var voiceName: String = defaultPreset
 
     init {
         Thread({ load() }, "tr-supertonic-load").apply { isDaemon = true; start() }
@@ -100,43 +87,25 @@ class SupertonicAppEngine(
         return when (name.firstOrNull()) { 'M' -> "Male voice $n"; 'F' -> "Female voice $n"; else -> name }
     }
 
-    private fun loadStyle(name: String) = VoiceStyle.parse(File(packDir, "voice_styles/$name.json").readText())
-
     private fun load() {
         try {
             val loadStart = System.nanoTime()
-            val lang = Locale.getDefault().language.takeIf { SupertonicLanguages.isValid(it) } ?: "na"
-            val threads = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
-            val model = SupertonicModel.load(File(packDir, "onnx"), threads)
-            val raw = SupertonicSynthesizer(model, loadStyle(defaultPreset), lang, steps)
-            val base = object : BaseVoice {
-                override val sampleRate = raw.sampleRate
-                override fun usePreset(name: String) { raw.style = loadStyle(name) }
-                override fun synthesizeFloat(text: String, speed: Float, isCancelled: () -> Boolean) = raw.synthesizeFloat(text, speed, isCancelled)
-                override fun release() = raw.release()
-            }
-            val dir = converterDir
-            val conv = dir?.let { d ->
-                val cfg = ConverterConfig.parse(File(d, "converter_config.json").readText())
-                LazyToneConverter(cfg.sampleRate) { OnnxToneConverter.load(d, threads) }
-            }
-            val s = ConvertingSynthesizer(base, conv, dir?.let { OnnxToneConverter.loadSourceEmbeddings(it) } ?: emptyMap())
-            s.trace = { m -> if (!released) _activity.value = m }
-            val pendingCustom = customId
-            if (pendingCustom != null) s.useCustom { fingerprintFor(pendingCustom) } else s.usePreset(voiceName)
-            val b = BufferedSpeechEngine(s, AudioTrackSink())
+            val nv = NeuralVoice.load(packDir, converterDir, library, steps, requestedVoice) { m -> if (!released) _activity.value = m }
+            val b = BufferedSpeechEngine(nv.synthesizer, AudioTrackSink())
             b.listener = forwarder
             b.onSlow = { rtf -> onSlow?.invoke(rtf) }
+            b.onSpeedKnown = { rtf -> onSpeedKnown?.invoke(rtf) }
             b.setSpeed(speed)
             val queued: List<Pair<Int, String>>
             synchronized(lock) {
                 if (released) { b.release(); return }
-                synth = s; buffered = b; converter = conv
+                voice = nv; buffered = b
                 queued = pending.toList(); pending.clear()
                 _status.value = EngineStatus.Ready
                 _activity.value = "Neural voice loaded in ${"%.1f".format((System.nanoTime() - loadStart) / 1e9)} s" +
-                    (if (conv != null) " (voice cloning add-on installed)" else "")
+                    (if (converterDir != null) " (voice cloning add-on installed)" else "")
             }
+            nv.setVoice(requestedVoice) // the narrator may have been changed while the model was loading
             queued.forEach { (id, text) -> b.enqueue(id, text) }
         } catch (t: Throwable) {
             val msg = if (t is OutOfMemoryError) "Not enough memory to load the neural voice." else "The neural voice could not start (${t.javaClass.simpleName})."
@@ -164,32 +133,18 @@ class SupertonicAppEngine(
 
     override fun setSpeed(speed: Float) { this.speed = speed; buffered?.setSpeed(speed) }
 
-    /** Fingerprint of a saved voice: cached with the profile, otherwise computed once from its recording (on the synthesis thread). */
-    private fun fingerprintFor(id: String): FloatArray? {
-        val lib = library ?: return null
-        lib.engineData(id, CLONE_ENGINE, CLONE_VERSION)?.let { bytes ->
-            runCatching { EmbeddingCodec.decode(bytes) }.getOrNull()?.takeIf { it.size == FINGERPRINT_SIZE }?.let { return it }
-        }
-        val file = lib.sampleFile(id) ?: return null
-        val conv = converter ?: return null
-        val pcm = WavIo.read(file.readBytes())
-        val fp = conv.embed(Dsp.resample(pcm, conv.sampleRate).samples)
-        lib.saveEngineData(id, CLONE_ENGINE, CLONE_VERSION, EmbeddingCodec.encode(fp))
-        return fp
+    override fun setVoice(name: String?) {
+        requestedVoice = name
+        voice?.setVoice(name)
     }
 
-    override fun setVoice(name: String?) {
-        val id = name?.takeIf { it.startsWith(Engines.CUSTOM_PREFIX) }?.removePrefix(Engines.CUSTOM_PREFIX)
-        if (id != null && converterDir != null && library?.profiles?.value?.any { it.id == id } == true) {
-            customId = id
-            synth?.useCustom { fingerprintFor(id) }
-            return
-        }
-        // a built-in voice, or a custom voice that no longer exists / cannot be used: fall back to a built-in one
-        customId = null
-        val target = name?.takeIf { it in styleNames } ?: defaultPreset
-        voiceName = target
-        synth?.let { runCatching { it.usePreset(target) } }
+    /** Times a few sentences with the current narrator; blocks, so call it from a worker thread. */
+    override fun measureSpeed(): Double? {
+        val b = synchronized(lock) { buffered } ?: return null
+        _activity.value = "Checking how fast this phone can make speech..."
+        val rtf = b.measure(SPEED_TEST_SENTENCES) { released }
+        _activity.value = if (rtf != null) "This phone takes ${"%.1f".format(rtf)} s to make 1 s of speech with this voice" else ""
+        return rtf
     }
 
     override fun preview(name: String, sample: String) {
@@ -205,8 +160,11 @@ class SupertonicAppEngine(
     }
 
     private companion object {
-        const val CLONE_ENGINE = "openvoice-v2-converter"
-        const val CLONE_VERSION = "1"
-        const val FINGERPRINT_SIZE = 256
+        /** Typical sentence lengths; the first one only warms the model up. */
+        val SPEED_TEST_SENTENCES = listOf(
+            "The old lighthouse stood quietly above the harbour while the evening tide came in.",
+            "She opened the heavy door and found a letter waiting on the small wooden table.",
+            "Nobody in the village could remember when the clock had last told the right time.",
+        )
     }
 }

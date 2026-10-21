@@ -20,6 +20,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.mundymorning.touchreader.data.ThemeMode
+import com.mundymorning.touchreader.ui.export.ExportScreen
 import com.mundymorning.touchreader.ui.library.LibraryScreen
 import com.mundymorning.touchreader.ui.reader.ReaderScreen
 import com.mundymorning.touchreader.ui.settings.SettingsScreen
@@ -29,31 +30,37 @@ import com.mundymorning.touchreader.ui.voices.VoicesScreen
 
 class MainActivity : ComponentActivity() {
     private var pendingDoc by mutableLongStateOf(-1L)
+    private var pendingExport by mutableLongStateOf(-1L)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         pendingDoc = intent.getLongExtra(EXTRA_DOC_ID, -1L)
+        pendingExport = intent.getLongExtra(EXTRA_EXPORT_DOC_ID, -1L)
         val container = (application as TouchReaderApp).container
         setContent {
             val mode by container.settings.theme.collectAsState()
             val dark = when (mode) { ThemeMode.SYSTEM -> isSystemInDarkTheme(); ThemeMode.LIGHT -> false; ThemeMode.DARK -> true }
-            TouchReaderTheme(dark) { AppRoot(container, pendingDoc) { pendingDoc = -1L } }
+            TouchReaderTheme(dark) { AppRoot(container, pendingDoc, pendingExport) { pendingDoc = -1L; pendingExport = -1L } }
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         pendingDoc = intent.getLongExtra(EXTRA_DOC_ID, -1L)
+        pendingExport = intent.getLongExtra(EXTRA_EXPORT_DOC_ID, -1L)
     }
 
-    companion object { const val EXTRA_DOC_ID = "docId" }
+    companion object {
+        const val EXTRA_DOC_ID = "docId"
+        const val EXTRA_EXPORT_DOC_ID = "exportDocId"
+    }
 }
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
 @Composable
-private fun AppRoot(container: AppContainer, pendingDoc: Long, consumed: () -> Unit) {
+private fun AppRoot(container: AppContainer, pendingDoc: Long, pendingExport: Long, consumed: () -> Unit) {
     val nav = rememberNavController()
     val tabs = listOf(
         Tab("library", "Library", Icons.AutoMirrored.Rounded.LibraryBooks),
@@ -65,6 +72,9 @@ private fun AppRoot(container: AppContainer, pendingDoc: Long, consumed: () -> U
 
     LaunchedEffect(pendingDoc) {
         if (pendingDoc >= 0) { nav.navigate("reader/$pendingDoc?play=false"); consumed() }
+    }
+    LaunchedEffect(pendingExport) {
+        if (pendingExport >= 0) { nav.navigate("export/$pendingExport"); consumed() }
     }
 
     Scaffold(
@@ -105,6 +115,14 @@ private fun AppRoot(container: AppContainer, pendingDoc: Long, consumed: () -> U
                 ReaderScreen(
                     container, e.arguments!!.getLong("id"), e.arguments!!.getBoolean("play"),
                     onBack = { nav.popBackStack() },
+                    onExport = { id -> nav.navigate("export/$id") },
+                )
+            }
+            composable("export/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+                ExportScreen(
+                    container, e.arguments!!.getLong("id"),
+                    onBack = { nav.popBackStack() },
+                    onOpenVoices = { nav.navigate("voices") },
                 )
             }
         }
