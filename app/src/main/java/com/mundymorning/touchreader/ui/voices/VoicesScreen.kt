@@ -132,6 +132,15 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                     Icon(Icons.Rounded.Mic, null); Spacer(Modifier.width(8.dp)); Text("Create a voice")
                 }
             }
+            item {
+                val report by container.voiceLab.report.collectAsState()
+                report?.let { r ->
+                    Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                        Text(r, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        TextButton({ container.voiceLab.dismissReport() }) { Text("Dismiss") }
+                    }
+                }
+            }
             items(myVoices, key = { it.id }) { v ->
               Column {
                 ListItem(
