@@ -68,6 +68,10 @@ te = tts.text_conditioner.run(None, {"token_ids": ids})[0]
 if te.ndim == 2: te = te[None]
 empty_seq = np.zeros((1, 0, tts.latent_dim), dtype=np.float32)
 empty_text = np.zeros((1, 0, tts.conditioning_dim), dtype=np.float32)
+# a first step straight after the voice, before any text (isolates the voice conditioning)
+nan_step = np.full((1, 1, tts.latent_dim), np.nan, dtype=np.float32)
+rv = tts.flow_lm_main.run(None, {"sequence": nan_step, "text_embeddings": empty_text, **tts._clone_state(state)})
+voice_only = {"conditioning": [float(x) for x in rv[0].reshape(-1)], "eos": float(rv[1].reshape(-1)[0])}
 st = tts._clone_state(state)
 r = tts.flow_lm_main.run(None, {"sequence": empty_seq, "text_embeddings": te, **st})
 tts._update_state_from_outputs(st, r, tts.flow_state_manifest, output_offset=2)
@@ -84,7 +88,7 @@ c0 = np.array(steps[0]["conditioning"], dtype=np.float32).reshape(r[0].shape)
 flow = tts.flow_lm_flow.run(None, {"c": c0, "s": np.array([[0.0]], dtype=np.float32), "t": np.array([[1.0]], dtype=np.float32), "x": x})[0]
 latents = rng.normal(0, 0.5, (1, 25, tts.latent_dim)).astype(np.float32)
 audio = tts.decode_latents(latents, chunk_size=12)
-json.dump({"token_ids": [int(i) for i in ids.reshape(-1)], "steps": steps, "flow_x": x.reshape(-1).tolist(), "flow_out": flow.reshape(-1).tolist(),
+json.dump({"token_ids": [int(i) for i in ids.reshape(-1)], "text_emb": te.reshape(-1).tolist(), "voice_only": voice_only, "steps": steps, "flow_x": x.reshape(-1).tolist(), "flow_out": flow.reshape(-1).tolist(),
            "latents": latents.reshape(-1).tolist(), "frames": int(emb.shape[1]), "cond_shape": list(r[0].shape), "text_emb_shape": list(te.shape)},
           open(os.path.join(OUT, "model.json"), "w"))
 audio.astype(np.float32).tofile(os.path.join(OUT, "decoded.bin"))

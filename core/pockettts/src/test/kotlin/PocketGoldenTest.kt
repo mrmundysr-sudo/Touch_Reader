@@ -97,77 +97,119 @@ class PocketGoldenTest {
         }
     }
 
-    @Test fun modelsMatchTheReferenceAndSpeechComesOut() {
+    private fun model(g: File) = JSONObject(File(g, "model.json").readText())
+
+    @Test fun voiceEncoderMatches() {
         val (tts, _, g) = load()
         tts.use {
-            val rt = it.runtime
-            val model = JSONObject(File(g, "model.json").readText())
-            val ref = readWav16(File(g, "ref.wav"))
+            val t0 = System.nanoTime()
+            val enc = it.runtime.encodeVoice(readWav16(File(g, "ref.wav")))
+            val d = maxAbs(enc, readFloats(File(g, "enc.bin")))
+            println("ENCODER frames=${enc.size / it.bundle.conditioningDim} maxdiff=$d seconds=${"%.2f".format((System.nanoTime() - t0) / 1e9)}")
+            assertTrue(d < 2e-3, "voice embeddings differ by $d")
+        }
+    }
 
-            // voice encoder
-            var t0 = System.nanoTime()
-            val enc = rt.encodeVoice(ref)
-            val encS = (System.nanoTime() - t0) / 1e9
+    @Test fun textConditionerMatches() {
+        val (tts, _, g) = load()
+        tts.use {
+            val m = model(g)
+            val ids = LongArray(m.getJSONArray("token_ids").length()) { k -> m.getJSONArray("token_ids").getLong(k) }
+            val d = maxAbs((it.runtime as OrtPocketRuntime).textEmbeddings(ids), floats(m.getJSONArray("text_emb")))
+            println("TEXT_EMBEDDINGS maxdiff=$d")
+            assertTrue(d < 2e-3, "text embeddings differ by $d")
+        }
+    }
+
+    @Test fun transformerConditioningMatches() {
+        val (tts, _, g) = load()
+        tts.use {
+            val m = model(g)
             val wantEnc = readFloats(File(g, "enc.bin"))
-            val dEnc = maxAbs(enc, wantEnc)
-            println("ENCODER frames=${enc.size / it.bundle.conditioningDim} maxdiff=$dEnc seconds=${"%.2f".format(encS)}")
-            assertTrue(dEnc < 2e-3, "voice embeddings differ by $dEnc")
-
-            // transformer conditioning over five steps (state threading)
-            val embedding = VoiceEmbedding(wantEnc, wantEnc.size / it.bundle.conditioningDim)
-            t0 = System.nanoTime()
-            val voice = it.prepareVoice(embedding)
-            println("PREPARE_VOICE seconds=${"%.2f".format((System.nanoTime() - t0) / 1e9)}")
+            val voice = it.prepareVoice(VoiceEmbedding(wantEnc, wantEnc.size / it.bundle.conditioningDim))
             voice.use { v ->
-                val ids = LongArray(model.getJSONArray("token_ids").length()) { k -> model.getJSONArray("token_ids").getLong(k) }
-                val steps = model.getJSONArray("steps")
-                rt.newSentence(v, ids).use { s ->
-                    var worst = 0.0
+                // straight after the voice, before any text
+                val ids = LongArray(m.getJSONArray("token_ids").length()) { k -> m.getJSONArray("token_ids").getLong(k) }
+                val steps = m.getJSONArray("steps")
+                var worst = 0.0
+                it.runtime.newSentence(v, ids).use { s ->
                     var previous: FloatArray? = null
                     for (i in 0 until steps.length()) {
                         val want = steps.getJSONObject(i)
                         val got = s.step(previous)
-                        worst = maxOf(worst, maxAbs(got.conditioning, floats(want.getJSONArray("conditioning"))), abs(got.eosLogit - want.getDouble("eos")))
+                        val wc = floats(want.getJSONArray("conditioning"))
+                        val dc = maxAbs(got.conditioning, wc)
+                        val de = abs(got.eosLogit - want.getDouble("eos"))
+                        val mag = wc.maxOf { x -> abs(x) }
+                        println("COND_STEP $i condDiff=$dc eosDiff=$de eos=${got.eosLogit} (want ${want.getDouble("eos")}) condMaxAbs=$mag")
+                        worst = maxOf(worst, dc, de)
                         previous = FloatArray(it.bundle.latentDim) { 0.1f }
                     }
-                    println("CONDITIONING steps=${steps.length()} maxdiff=$worst")
-                    assertTrue(worst < 5e-3, "conditioning differs by $worst")
                 }
+                println("CONDITIONING steps=${steps.length()} maxdiff=$worst")
+                assertTrue(worst < 5e-3, "conditioning differs by $worst")
+            }
+        }
+    }
 
-                // one flow-network step
-                val c0 = floats(steps.getJSONObject(0).getJSONArray("conditioning"))
-                val flow = rt.flow(c0, 0f, 1f, floats(model.getJSONArray("flow_x")))
-                val dFlow = maxAbs(flow, floats(model.getJSONArray("flow_out")))
-                println("FLOW maxdiff=$dFlow")
-                assertTrue(dFlow < 2e-3, "flow output differs by $dFlow")
+    @Test fun flowNetworkMatches() {
+        val (tts, _, g) = load()
+        tts.use {
+            val m = model(g)
+            val c0 = floats(m.getJSONArray("steps").getJSONObject(0).getJSONArray("conditioning"))
+            val d = maxAbs(it.runtime.flow(c0, 0f, 1f, floats(m.getJSONArray("flow_x"))), floats(m.getJSONArray("flow_out")))
+            println("FLOW maxdiff=$d")
+            assertTrue(d < 2e-3, "flow output differs by $d")
+        }
+    }
 
-                // audio decoder, in chunks of 12 frames, state carried over
-                val lat = floats(model.getJSONArray("latents"))
-                val frames = lat.size / it.bundle.latentDim
-                val parts = ArrayList<FloatArray>()
-                rt.newDecoder().use { d ->
-                    var i = 0
-                    while (i < frames) { val end = minOf(i + 12, frames); parts += d.decode((i until end).map { f -> lat.copyOfRange(f * it.bundle.latentDim, (f + 1) * it.bundle.latentDim) }); i = end }
-                }
-                val audio = FloatArray(parts.sumOf { p -> p.size }).also { a -> var o = 0; parts.forEach { p -> p.copyInto(a, o); o += p.size } }
-                val dDec = maxAbs(audio, readFloats(File(g, "decoded.bin")))
-                println("DECODER samples=${audio.size} maxdiff=$dDec")
-                assertTrue(dDec < 5e-3, "decoded audio differs by $dDec")
+    @Test fun audioDecoderMatches() {
+        val (tts, _, g) = load()
+        tts.use {
+            val lat = floats(model(g).getJSONArray("latents"))
+            val dim = it.bundle.latentDim
+            val frames = lat.size / dim
+            val parts = ArrayList<FloatArray>()
+            it.runtime.newDecoder().use { d ->
+                var i = 0
+                while (i < frames) { val end = minOf(i + 12, frames); parts += d.decode((i until end).map { f -> lat.copyOfRange(f * dim, (f + 1) * dim) }); i = end }
+            }
+            val audio = FloatArray(parts.sumOf { p -> p.size }).also { a -> var o = 0; parts.forEach { p -> p.copyInto(a, o); o += p.size } }
+            val d = maxAbs(audio, readFloats(File(g, "decoded.bin")))
+            println("DECODER samples=${audio.size} maxdiff=$d")
+            assertTrue(d < 5e-3, "decoded audio differs by $d")
+        }
+    }
 
-                // the whole thing: speech comes out, at a measured speed
-                val text = "The quick brown fox jumps over the lazy dog, and then it rests beside the river."
+    @Test fun speechComesOut() {
+        val (tts, _, g) = load()
+        tts.use {
+            val wantEnc = readFloats(File(g, "enc.bin"))
+            val voice = it.prepareVoice(VoiceEmbedding(wantEnc, wantEnc.size / it.bundle.conditioningDim))
+            voice.use { v ->
                 val gen = it.generator(seed = 1L)
                 gen.generate("Warm up.", v)
-                t0 = System.nanoTime()
+                val text = "The quick brown fox jumps over the lazy dog, and then it rests beside the river."
+                val t0 = System.nanoTime()
                 val out = gen.generate(text, v)!!
                 val secs = (System.nanoTime() - t0) / 1e9
                 val dur = out.size.toDouble() / it.bundle.sampleRate
                 val rms = sqrt(out.sumOf { x -> (x * x).toDouble() } / out.size)
+                File(g, "kotlin_out.wav").writeBytes(wav16(out, it.bundle.sampleRate))
                 println("GENERATE audio=${"%.2f".format(dur)}s took=${"%.2f".format(secs)}s rtf=${"%.2f".format(secs / dur)} rms=${"%.4f".format(rms)} heapMB=${(Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1_000_000}")
                 assertTrue(out.all { x -> x.isFinite() }, "audio has NaN or infinity")
                 assertTrue(dur in 2.0..12.0, "implausible duration $dur")
                 assertTrue(rms > 0.003, "audio is silent (rms=$rms)")
             }
         }
+    }
+
+    private fun wav16(samples: FloatArray, sr: Int): ByteArray {
+        val data = ByteBuffer.allocate(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+        samples.forEach { x -> data.putShort((x * 32767f).coerceIn(-32768f, 32767f).toInt().toShort()) }
+        val h = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+        h.put("RIFF".toByteArray()).putInt(36 + data.capacity()).put("WAVEfmt ".toByteArray()).putInt(16).putShort(1).putShort(1).putInt(sr).putInt(sr * 2).putShort(2).putShort(16)
+        h.put("data".toByteArray()).putInt(data.capacity())
+        return h.array() + data.array()
     }
 }

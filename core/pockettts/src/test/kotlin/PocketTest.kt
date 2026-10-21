@@ -126,10 +126,11 @@ class PocketTextTest {
     @Test fun preparesTextLikeTheReference() {
         val t = PocketText(tokenizer, testBundle())
         val p = t.prepare("  hello there\nfriend  ")
-        assertEquals("Hello there friend.", p.text); assertEquals(1, p.framesAfterEosGuess)
+        assertEquals("Hello there friend.", p.text); assertEquals(3, p.framesAfterEosGuess) // three words: four or fewer -> 3
+        assertEquals(1, t.prepare("one two three four five six").framesAfterEosGuess)
         assertEquals("Yes!", t.prepare("yes!").text)
         assertEquals(3, t.prepare("Hi there.").framesAfterEosGuess) // four words or fewer
-        assertEquals("a, b", PocketText(tokenizer, testBundle(removeSemicolons = true)).prepare("A; b").text.replace(Regex("^A"), "a").let { "a, b" })
+        assertEquals("A, b c.", PocketText(tokenizer, testBundle(removeSemicolons = true)).prepare("a; b c").text)
         assertTrue(PocketText(tokenizer, testBundle(padShort = true)).prepare("Hi.").text.startsWith(" ".repeat(8)))
         assertFailsWith<IllegalArgumentException> { t.prepare("   ") }
     }

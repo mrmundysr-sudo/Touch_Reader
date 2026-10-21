@@ -130,6 +130,17 @@ class OrtPocketRuntime(private val bundle: PocketBundle, private val dir: File, 
         }
     }
 
+    /** The text conditioner's output for [tokenIds] (frames x conditioningDim). For tests and diagnostics. */
+    fun textEmbeddings(tokenIds: LongArray): FloatArray {
+        val ids = OnnxTensor.createTensor(env, LongBuffer.wrap(tokenIds), longArrayOf(1, tokenIds.size.toLong()))
+        try {
+            textConditioner.run(mapOf("token_ids" to ids)).use { r ->
+                val t = r.get(0) as OnnxTensor
+                return FloatArray(t.floatBuffer.remaining()).also { t.floatBuffer.get(it) }
+            }
+        } finally { ids.close() }
+    }
+
     override fun flow(conditioning: FloatArray, s: Float, t: Float, x: FloatArray): FloatArray {
         val c = floats(conditioning, longArrayOf(1, conditioning.size.toLong()))
         val sT = floats(floatArrayOf(s), longArrayOf(1, 1))
