@@ -260,8 +260,13 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                             if (work > 12 * 3600) Text("That is long. Keep the phone plugged in, for example overnight, and continue the next night.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                         } else {
                             Text("This phone has not been timed yet.")
-                            if (status.phase == ExportPhase.TESTING) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(status.message.orEmpty(), style = MaterialTheme.typography.bodySmall) }
-                            else OutlinedButton({ scope.launch { message = exporter.testSpeed(voice, steps) } }, enabled = !status.running) { Text("Test this phone's speed (about a minute)") }
+                        }
+                        if (status.phase == ExportPhase.TESTING) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(status.message.orEmpty(), style = MaterialTheme.typography.bodySmall) }
+                        else {
+                            val exact = timings.any { it.steps == steps && it.custom == custom }
+                            OutlinedButton({ scope.launch { message = exporter.testSpeed(voice, steps) } }, enabled = !status.running) {
+                                Text(if (exact) "Test again (about a minute)" else "Test this phone's speed (about a minute)")
+                            }
                         }
                     } }
                 }
