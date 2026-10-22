@@ -155,3 +155,6 @@ docs/ASSETS.md is the spec sheet for the owner's image tool (per slot: purpose a
 Install the debug APK on a real, ideally low-end, phone and run the manual checklist: import one file of each
 format, listen with the screen off, Bluetooth headset buttons, kill/restart the app and confirm position restore.
 Fix what breaks, and measure any candidate neural engine on that same phone before integrating it. (Licence decided: Apache-2.0, Mundy Morning Studios; see LICENSE, NOTICE and docs/THIRD_PARTY.md. Legal review before a public store release is still advisable.)
+
+## Compare A / B / C (voice preview)
+Up to three finished samples per saved voice can be kept (A, B, C) from the voice preview, then played back instantly from "Compare A, B, C" in any order. Each keeps the part, pace and delivery it was made with; "Use this one" makes those the voice's saved choice. Samples are files in the app's private storage and are deleted with the voice. Not yet tried on a phone. A sample is one take; the model has some randomness, so a whole book can differ slightly from it.

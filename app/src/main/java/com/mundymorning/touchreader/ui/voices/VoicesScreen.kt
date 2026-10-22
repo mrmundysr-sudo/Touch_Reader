@@ -66,6 +66,8 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
     var labPace by remember { mutableIntStateOf(100) }
     var labDelivery by remember { mutableIntStateOf(1) }
     var labLink by remember { mutableStateOf(false) }
+    var compareFor by remember { mutableStateOf<VoiceProfile?>(null) }
+    val candVersion by container.voiceLab.candidatesVersion.collectAsState()
     val labPlaying by container.samplePlayer.playingKey.collectAsState()
     val lang = Locale.getDefault().language
     val shown = remember(voices, allLanguages) { if (allLanguages) voices else voices.filter { it.language == lang || it.language.isEmpty() } }
@@ -174,6 +176,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                 )
                 if (labReady && container.voiceLibrary.sampleFile(v.id) != null) {
                     TextButton({ val last = container.voiceLab.lastChoice(v.id); labStart = last?.start ?: 0; labPace = last?.pace ?: 100; labDelivery = last?.delivery ?: 1; labLink = last?.link ?: false; labPick = v }, Modifier.padding(start = 16.dp)) { Text("Voice preview: part, pace and delivery") }
+                    TextButton({ compareFor = v }, Modifier.padding(start = 16.dp)) { Text("Compare A, B, C") }
                 }
               }
             }
@@ -232,6 +235,20 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                             )
                         }
                         else -> {}
+                    }
+                    if (st is com.mundymorning.touchreader.lab.LabState.Done) {
+                        val pid = container.voiceLab.sampleVoiceId()
+                        if (pid != null && container.voiceLab.canKeep(pid)) {
+                            val kept = remember(candVersion, pid) { container.voiceLab.candidates(pid) }
+                            Spacer(Modifier.height(12.dp))
+                            Text("Keep this to compare later", style = MaterialTheme.typography.titleSmall)
+                            Text("Keep up to three samples (A, B, C) and switch between them instantly from “Compare A, B, C”.", style = MaterialTheme.typography.bodySmall)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                for (slot in 0..2) OutlinedButton({ container.voiceLab.keep(pid, slot) }, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                                    Text(if (kept[slot] != null) "Replace ${"ABC"[slot]}" else "Keep as ${"ABC"[slot]}", maxLines = 1)
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -294,6 +311,39 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
         )
     }
 
+    compareFor?.let { v ->
+        val items = remember(candVersion, v.id) { container.voiceLab.candidates(v.id) }
+        val current = remember(candVersion, v.id) { container.voiceLab.lastChoice(v.id) }
+        DisposableEffect(v.id) { onDispose { container.samplePlayer.stop() } }
+        AlertDialog(
+            onDismissRequest = { container.samplePlayer.stop(); compareFor = null },
+            title = { Text("Compare: ${v.name}") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("Each sample reads the same short paragraph. Tap one to hear it straight away, in any order. To add one, use “Voice preview”, make a sample, then keep it as A, B or C. A sample is one take, so reading a whole book can sound slightly different from it.", style = MaterialTheme.typography.bodySmall)
+                    for (slot in 0..2) {
+                        val c = items[slot]
+                        val name = "ABC"[slot]
+                        Spacer(Modifier.height(12.dp))
+                        if (c == null) {
+                            Text("$name: empty", style = MaterialTheme.typography.titleSmall)
+                        } else {
+                            val ch = c.choice
+                            val inUse = current != null && current.start == ch.start && current.pace == ch.pace && current.delivery == ch.delivery
+                            Text("$name: part from ${ch.start} s · ${ch.pace}% · ${listOf("steady", "normal", "lively")[ch.delivery]}" + if (inUse) "  (in use)" else "", style = MaterialTheme.typography.titleSmall)
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                TextButton({ if (labPlaying == "cand-$slot") container.samplePlayer.stop() else container.voiceLab.playCandidate(v.id, slot) }) { Text(if (labPlaying == "cand-$slot") "Stop" else "Play") }
+                                TextButton({ container.voiceLab.useCandidate(v.id, slot) }, enabled = !inUse) { Text("Use this one") }
+                                TextButton({ container.voiceLab.clearCandidate(v.id, slot) }) { Text("Remove") }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton({ container.samplePlayer.stop(); compareFor = null }) { Text("Done") } },
+        )
+    }
+
     if (needsAddon) {
         AlertDialog(
             onDismissRequest = { needsAddon = false },
@@ -321,6 +371,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
             confirmButton = {
                 TextButton({
                     container.samplePlayer.stop()
+                    container.voiceLab.deleteCandidates(v.id)
                     voiceScope.launch { container.voiceLibrary.delete(v.id) }
                     deleteVoice = null
                 }) { Text("Delete") }

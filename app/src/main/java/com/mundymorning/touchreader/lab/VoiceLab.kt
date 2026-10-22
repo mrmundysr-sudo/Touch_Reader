@@ -55,6 +55,8 @@ class VoiceLab(
     val state: StateFlow<LabState> = _state.asStateFlow()
 
     @Volatile private var sample: Pcm? = null
+    @Volatile private var sampleProfile: String? = null
+    @Volatile private var sampleChoice: VoiceChoice? = null
     @Volatile private var cancelled = false
     private var worker: Thread? = null
 
@@ -113,6 +115,70 @@ class VoiceLab(
         player.playPcm("lab-segment", Pcm(pcm.sampleRate, pcm.samples.copyOfRange(from, to)))
     }
 
+
+    // ---- Compare A / B / C: up to three finished samples per voice, kept as files so they play back instantly ----
+
+    /** One kept sample: the settings it was made with and the finished audio. */
+    data class Candidate(val slot: Int, val choice: VoiceChoice, val file: java.io.File)
+
+    private val candDir = java.io.File(context.filesDir, "lab-candidates")
+    private val _candidatesVersion = MutableStateFlow(0)
+
+    /** Changes whenever a kept sample is added or removed, so screens can refresh. */
+    val candidatesVersion: StateFlow<Int> = _candidatesVersion.asStateFlow()
+
+    private fun candWav(profileId: String, slot: Int) = java.io.File(candDir, "$profileId-${"ABC"[slot]}.wav")
+    private fun candMeta(profileId: String, slot: Int) = java.io.File(candDir, "$profileId-${"ABC"[slot]}.txt")
+
+    /** Which voice the sample just made belongs to. */
+    fun sampleVoiceId(): String? = if (sample != null) sampleProfile else null
+
+    /** Whether the sample just made can be kept (it belongs to this voice). */
+    fun canKeep(profileId: String): Boolean = sample != null && sampleProfile == profileId && sampleChoice != null
+
+    /** Keeps the sample just made as A, B or C, replacing what was there. */
+    fun keep(profileId: String, slot: Int): Boolean {
+        val pcm = sample ?: return false
+        val c = sampleChoice ?: return false
+        if (sampleProfile != profileId || slot !in 0..2) return false
+        return runCatching {
+            candDir.mkdirs()
+            candWav(profileId, slot).writeBytes(WavIo.write16(pcm))
+            candMeta(profileId, slot).writeText("${c.start},${c.pace},${c.delivery}")
+            _candidatesVersion.value++
+        }.isSuccess
+    }
+
+    /** The three slots for a voice; null where nothing is kept. */
+    fun candidates(profileId: String): List<Candidate?> = List(3) { slot ->
+        runCatching {
+            val wav = candWav(profileId, slot).takeIf { it.isFile } ?: return@runCatching null
+            val f = candMeta(profileId, slot).readText().split(",").map { it.trim().toInt() }
+            Candidate(slot, VoiceChoice(f[0], f[1].coerceIn(80, 100), f[2].coerceIn(0, 2), false), wav)
+        }.getOrNull()
+    }
+
+    fun playCandidate(profileId: String, slot: Int) {
+        val c = candidates(profileId).getOrNull(slot) ?: return
+        player.play("cand-$slot", c.file)
+    }
+
+    /** Makes a kept sample's settings the ones reading and audiobooks use for this voice. */
+    fun useCandidate(profileId: String, slot: Int): Boolean {
+        val c = candidates(profileId).getOrNull(slot) ?: return false
+        PocketNarrator.saveChoice(library, profileId, c.choice)
+        _candidatesVersion.value++
+        return true
+    }
+
+    fun clearCandidate(profileId: String, slot: Int) {
+        runCatching { candWav(profileId, slot).delete(); candMeta(profileId, slot).delete() }
+        _candidatesVersion.value++
+    }
+
+    /** Removes every kept sample of a voice (when the voice is deleted, its audio goes with it). */
+    fun deleteCandidates(profileId: String) { for (slot in 0..2) runCatching { candWav(profileId, slot).delete(); candMeta(profileId, slot).delete() }; _candidatesVersion.value++ }
+
     fun play() { sample?.let { player.playPcm(PLAY_KEY, it) } }
     fun stopPlaying() = player.stop()
 
@@ -129,6 +195,8 @@ class VoiceLab(
         val file = library.sampleFile(profileId) ?: run { _state.value = LabState.Failed(voiceName, "This voice has no saved recording."); return }
         cancelled = false
         sample = null
+        sampleProfile = null
+        sampleChoice = null
         player.stop()
         runCatching { traceFile.writeText("") }
         _report.value = null
@@ -186,6 +254,8 @@ class VoiceLab(
                     for (p in out) { for (k in p.indices) all[at + k] = p[k] / 32768f; at += p.size }
                     val pcm = Pcm(tts.bundle.sampleRate, all)
                     sample = pcm
+                    sampleProfile = profileId
+                    sampleChoice = choice
                     trace("DONE")
                     // seconds of speech before any slowing, so the speed figure means the same at every pace
                     val unslowed = spokenSamples.toDouble() / tts.bundle.sampleRate * (choice.pace / 100.0)
