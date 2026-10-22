@@ -1,11 +1,16 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FFFFFF"
+    <!-- leather cover, parchment pages, brass spine, blue bookmark ribbon and two sound arcs: the artwork's book, simplified -->
+    <path android:fillColor="#8C5A2B"
+        android:pathData="M25,41 C36,39 47,41 54,47 C61,41 72,39 83,41 L83,77 C72,75 61,77 54,83 C47,77 36,75 25,77 Z" />
+    <path android:fillColor="#F6ECD8"
         android:pathData="M28,38 C38,36 48,38 54,44 C60,38 70,36 80,38 L80,72 C70,70 60,72 54,78 C48,72 38,70 28,72 Z" />
-    <path android:fillColor="#1F4E5A" android:pathData="M52.5,46 L55.5,46 L55.5,76 L52.5,76 Z" />
-    <path android:strokeColor="#F2B84B" android:strokeWidth="3" android:strokeLineCap="round"
-        android:pathData="M84,50 C88,54 88,60 84,64" />
-    <path android:strokeColor="#F2B84B" android:strokeWidth="3" android:strokeLineCap="round"
-        android:pathData="M90,45 C97,52 97,62 90,69" />
+    <path android:fillColor="#B98A3E" android:pathData="M52.5,46 L55.5,46 L55.5,76 L52.5,76 Z" />
+    <path android:fillColor="#2C86D9"
+        android:pathData="M57,40 L64,41 L64,85 L60.5,81 L57,85 Z" />
+    <path android:strokeColor="#D9A95B" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M86,50 C90,54 90,60 86,64" />
+    <path android:strokeColor="#D9A95B" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M92,45 C99,52 99,62 92,69" />
 </vector>

@@ -4,9 +4,28 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.LibraryBooks
 import androidx.compose.material.icons.rounded.RecordVoiceOver
@@ -40,8 +59,22 @@ class MainActivity : ComponentActivity() {
         val container = (application as TouchReaderApp).container
         setContent {
             val mode by container.settings.theme.collectAsState()
-            val dark = when (mode) { ThemeMode.SYSTEM -> isSystemInDarkTheme(); ThemeMode.LIGHT -> false; ThemeMode.DARK -> true }
-            TouchReaderTheme(dark) { AppRoot(container, pendingDoc, pendingExport) { pendingDoc = -1L; pendingExport = -1L } }
+            val dark = when (mode) { ThemeMode.SYSTEM -> isSystemInDarkTheme(); ThemeMode.LIGHT -> false; ThemeMode.DARK, ThemeMode.CONTRAST -> true }
+            // the status and navigation bar icons must follow the chosen theme, not just the phone's own setting
+            DisposableEffect(dark) {
+                enableEdgeToEdge(
+                    statusBarStyle = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT) else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+                    navigationBarStyle = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT) else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+                )
+                onDispose { }
+            }
+            var splash by rememberSaveable { mutableStateOf(true) }
+            TouchReaderTheme(dark, contrast = mode == ThemeMode.CONTRAST) {
+                Box {
+                    AppRoot(container, pendingDoc, pendingExport) { pendingDoc = -1L; pendingExport = -1L }
+                    AnimatedVisibility(splash, exit = fadeOut(tween(450))) { SplashScreen { splash = false } }
+                }
+            }
         }
     }
 
@@ -126,5 +159,19 @@ private fun AppRoot(container: AppContainer, pendingDoc: Long, pendingExport: Lo
                 )
             }
         }
+    }
+}
+
+/** The artwork shown for a moment when the app opens (tap to skip); the library loads underneath it. */
+@Composable
+private fun SplashScreen(onDone: () -> Unit) {
+    LaunchedEffect(Unit) { delay(1600); onDone() }
+    Box(Modifier.fillMaxSize().background(Color(0xFF1C120B)).clickable(onClickLabel = "Skip") { onDone() }) {
+        Image(painterResource(R.drawable.splash_art), contentDescription = "Touch Reader", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        Text(
+            "Mundy Morning Studios\nAlways Professional. Always Free.",
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 20.dp),
+            color = Color(0xFFF1E6D0), fontSize = 13.sp, textAlign = TextAlign.Center,
+        )
     }
 }

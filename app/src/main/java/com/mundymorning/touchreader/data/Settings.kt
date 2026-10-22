@@ -7,7 +7,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-enum class ThemeMode { SYSTEM, LIGHT, DARK }
+/** LIGHT is shown as "Parchment", DARK as "Study". New entries go at the end: the saved choice is the position. */
+enum class ThemeMode { SYSTEM, LIGHT, DARK, CONTRAST }
 
 /** Small preference store exposing observable values. */
 class Settings(context: Context) {

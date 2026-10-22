@@ -3,6 +3,7 @@ package com.mundymorning.touchreader.ui.library
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +16,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.mundymorning.touchreader.R
 import androidx.compose.ui.unit.dp
 import com.mundymorning.touchreader.AppContainer
 import com.mundymorning.touchreader.data.DocumentEntity
@@ -134,7 +139,11 @@ private fun EmptyState(hasDocs: Boolean) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(Icons.Rounded.MenuBook, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+        if (hasDocs) Icon(Icons.Rounded.MenuBook, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+        else {
+            Image(painterResource(R.drawable.mascot), contentDescription = "A golden retriever in glasses resting on a pile of books", contentScale = ContentScale.Crop,
+                modifier = Modifier.size(200.dp).clip(RoundedCornerShape(28.dp)))
+        }
         Spacer(Modifier.height(16.dp))
         Text(if (hasDocs) "No matches" else "Your library is empty", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))

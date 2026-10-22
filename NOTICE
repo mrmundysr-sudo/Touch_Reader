@@ -12,3 +12,6 @@ and credits each one requires, is in docs/THIRD_PARTY.md. In particular:
     before the download and the licence is saved with the files.
   - Supertonic 3, by Supertone Inc. (built-in voices), under the BigScience OpenRAIL-M licence, with use restrictions.
   - ONNX Runtime, by Microsoft (MIT).
+
+Artwork (logo, splash picture, mascot) in app/src/main/res/drawable-nodpi is Copyright 2026 Mundy Morning Studios,
+all rights reserved. It is not covered by the Apache License that applies to the code in this repository.

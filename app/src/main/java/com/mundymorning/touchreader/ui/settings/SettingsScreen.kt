@@ -1,5 +1,6 @@
 package com.mundymorning.touchreader.ui.settings
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -9,9 +10,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.mundymorning.touchreader.AppContainer
+import com.mundymorning.touchreader.R
 import com.mundymorning.touchreader.data.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,7 +31,7 @@ fun SettingsScreen(container: AppContainer) {
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Header("Appearance")
             Column(Modifier.selectableGroup()) {
-                listOf(ThemeMode.SYSTEM to "Follow system", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark").forEach { (m, label) ->
+                listOf(ThemeMode.SYSTEM to "Follow system (Parchment by day, Study at night)", ThemeMode.LIGHT to "Parchment (light)", ThemeMode.DARK to "Study (dark walnut)", ThemeMode.CONTRAST to "High contrast").forEach { (m, label) ->
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(theme == m, onClick = { s.setTheme(m) }, role = Role.RadioButton).padding(horizontal = 24.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -61,6 +64,8 @@ fun SettingsScreen(container: AppContainer) {
 
             Header("About")
             Column(Modifier.padding(horizontal = 24.dp)) {
+                Image(painterResource(R.drawable.touch_logo), contentDescription = "Touch Reader", modifier = Modifier.fillMaxWidth(0.7f).align(Alignment.CenterHorizontally))
+                Spacer(Modifier.height(8.dp))
                 Text("Touch Reader 0.1.0 — Mundy Morning Studios", style = MaterialTheme.typography.bodyMedium)
                 Text("Always Professional. Always Free.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(12.dp))
@@ -68,7 +73,7 @@ fun SettingsScreen(container: AppContainer) {
                 Spacer(Modifier.height(12.dp))
                 Text("Open-source components", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "AndroidX, Jetpack Compose, Room — Apache License 2.0\nPDFBox-Android — Apache License 2.0\nONNX Runtime — MIT License\nSupertonic code — MIT License; Supertonic 3 model — BigScience OpenRAIL-M\njsoup — MIT License\nKotlin and kotlinx.coroutines — Apache License 2.0",
+                    "Touch Reader — Apache License 2.0\nAndroidX, Jetpack Compose, Room — Apache License 2.0\nPDFBox-Android — Apache License 2.0\nONNX Runtime — MIT License\nSupertonic code — MIT License; Supertonic 3 model — BigScience OpenRAIL-M\nPocket TTS by Kyutai (ONNX export by KevinAHM) — CC-BY-4.0; a voice may only be copied with the person's consent\njsoup — MIT License\nKotlin and kotlinx.coroutines — Apache License 2.0",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
