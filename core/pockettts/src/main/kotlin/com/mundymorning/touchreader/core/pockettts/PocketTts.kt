@@ -48,14 +48,36 @@ class PocketTts private constructor(
 
     fun generator(temperature: Float = 0.7f, lsdSteps: Int = 1, seed: Long? = null) = PocketGenerator(bundle, text, runtime, temperature, lsdSteps, seed = seed)
 
-    /** A [Synthesizer] that speaks in [voice] (24 kHz, 16-bit), slowed by [pace] (1.0 = as spoken; read for every sentence) and by the speed it is asked for, without changing pitch. Closing it does not close the voice or the model. */
-    fun synthesizer(voice: PocketVoice, temperature: Float = 0.7f, lsdSteps: Int = 1, pace: () -> Double = { 1.0 }): Synthesizer {
-        val g = generator(temperature, lsdSteps)
+    /**
+     * A [Synthesizer] that speaks in [voice] (24 kHz, 16-bit). [temperature], [pace] and [link] are read for every call, so they can be
+     * changed while it is in use. [pace] slows the voice (1.0 = as spoken) and the speed it is asked for speeds it up or slows it
+     * further, both without changing pitch; the quiet the model leaves around what it says is trimmed. With [link], each piece
+     * starts from where the previous one left off until [Synthesizer.resetContext] is called. Closing it does not close the voice or the model.
+     */
+    fun synthesizer(
+        voice: PocketVoice,
+        temperature: () -> Float = { 0.7f },
+        lsdSteps: Int = 1,
+        pace: () -> Double = { 1.0 },
+        link: () -> Boolean = { false },
+    ): Synthesizer {
         return object : Synthesizer {
+            private var continuation: PocketVoice? = null
+            @Volatile private var dirty = false
             override val sampleRate: Int get() = bundle.sampleRate
+
+            private fun dropContinuation() { continuation?.let { runCatching { it.close() } }; continuation = null }
+            override fun resetContext() { dirty = true }
+            override fun release() { dropContinuation() }
+
             override fun synthesize(text: String, speed: Float, isCancelled: () -> Boolean): ShortArray {
-                val raw = g.generate(text, voice, isCancelled) ?: return ShortArray(0)
-                // [pace] slows (below 1) the voice; the reader's speed setting speeds it up or slows it further. Both keep the pitch.
+                if (dirty) { dirty = false; dropContinuation() }
+                val carry = link()
+                if (!carry) dropContinuation()
+                val result = generator(temperature(), lsdSteps).generateLinked(text, voice, if (carry) continuation else null, carry, isCancelled)
+                    ?: return ShortArray(0)
+                if (carry) { dropContinuation(); continuation = result.state }
+                val raw = result.audio
                 val factor = (pace() * speed).coerceIn(0.5, 2.0)
                 // the model leaves a little quiet before and after what it says: cut it so the pauses can be set on purpose
                 val trimmed = AudioTrim.trim(raw, bundle.sampleRate)
@@ -66,6 +88,14 @@ class PocketTts private constructor(
     }
 
     override fun close() { runtime.close() }
+
+    /** The "delivery" choices: how much random variation the model adds to each sound frame. */
+    object Delivery {
+        const val STEADY = 0
+        const val NORMAL = 1
+        const val LIVELY = 2
+        fun temperature(choice: Int): Float = when (choice) { STEADY -> 0.35f; LIVELY -> 0.95f; else -> 0.7f }
+    }
 
     companion object {
         const val DEFAULT_MAX_REFERENCE_SECONDS = 15f

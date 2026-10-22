@@ -21,6 +21,7 @@ import com.mundymorning.touchreader.playback.PlaybackController
 import com.mundymorning.touchreader.studio.VoiceLibrary
 import com.mundymorning.touchreader.tts.Engines
 import com.mundymorning.touchreader.tts.NeuralVoice
+import com.mundymorning.touchreader.core.pockettts.PocketTts
 import com.mundymorning.touchreader.tts.PocketNarrator
 import com.mundymorning.touchreader.voices.VoicePackManager
 import kotlinx.coroutines.Dispatchers
@@ -140,7 +141,7 @@ class ExportController(
             } else {
                 runBlocking(Dispatchers.Main.immediate) { playback.releaseForExport() }
                 if (pocket) {
-                    val n = PocketNarrator.load(pocketDir!!, library, s.voice.removePrefix(Engines.CUSTOM_PREFIX), s.refStartSeconds, pocketSteps(s.steps), s.pacePercent / 100.0)
+                    val n = PocketNarrator.load(pocketDir!!, library, s.voice.removePrefix(Engines.CUSTOM_PREFIX), s.refStartSeconds, pocketSteps(s.steps), { s.pacePercent / 100.0 }, { PocketTts.Delivery.temperature(s.delivery) }, { s.link })
                     narrator = n
                     engine = ExportEngine(book, plan, s, store, n.synthesizer, AacEncoder())
                 } else {
@@ -201,7 +202,7 @@ class ExportController(
                     return if (audio > 0) work / audio else null
                 }
                 if (pocket) {
-                    PocketNarrator.load(pocketDir!!, library, voiceName.removePrefix(Engines.CUSTOM_PREFIX), refStartSeconds, pocketSteps(steps), 1.0).use { n ->
+                    PocketNarrator.load(pocketDir!!, library, voiceName.removePrefix(Engines.CUSTOM_PREFIX), refStartSeconds, pocketSteps(steps), { 1.0 }).use { n ->
                         measure(n.synthesizer)?.let { settings.recordSpeed(ExportEstimator.Measurement(steps, true, it, ExportEstimator.ENGINE_POCKET)) }
                     }
                 } else {

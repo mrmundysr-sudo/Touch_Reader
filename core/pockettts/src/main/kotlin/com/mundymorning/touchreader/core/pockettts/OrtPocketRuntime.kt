@@ -64,7 +64,7 @@ class OrtPocketRuntime(private val bundle: PocketBundle, private val dir: File, 
         fun close() { ownedResult?.close(); ownedResult = null }
     }
 
-    private class OrtVoice(val tensors: Map<String, OnnxTensor>, private val owner: OrtSession.Result?) : PocketVoice {
+    private class OrtVoice(val tensors: Map<String, OnnxTensor>, private val owner: OrtSession.Result?, override val frames: Int = 0) : PocketVoice {
         override fun close() { owner?.close() }
     }
 
@@ -102,7 +102,7 @@ class OrtPocketRuntime(private val bundle: PocketBundle, private val dir: File, 
                 at += n
             }
             val (tensors, owner) = chain.detach()
-            return OrtVoice(tensors, owner)
+            return OrtVoice(tensors, owner, frames)
         } catch (e: Throwable) {
             chain.close(); throw e
         } finally {
@@ -139,6 +139,11 @@ class OrtPocketRuntime(private val bundle: PocketBundle, private val dir: File, 
                     chain.advance(result, 2)
                     return PocketSentence.Step(conditioning, eos)
                 } finally { seq.close() }
+            }
+
+            override fun detachAsVoice(framesUsed: Int): PocketVoice? {
+                val (tensors, owner) = chain.detach()
+                return if (owner == null) null else OrtVoice(tensors, owner, framesUsed)
             }
 
             override fun close() { chain.close() }

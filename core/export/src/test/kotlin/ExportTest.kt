@@ -27,6 +27,8 @@ private fun sampleBook(chapters: Int = 3, sentencesPer: Int = 10): ReaderBook = 
 private class FakeSynth(val failOn: (String) -> Boolean = { false }) : Synthesizer {
     override val sampleRate = 44100
     val calls = ArrayList<String>()
+    var resets = 0
+    override fun resetContext() { resets++ }
     override fun synthesize(text: String, speed: Float, isCancelled: () -> Boolean): ShortArray {
         calls += text
         if (failOn(text)) error("boom")
@@ -253,6 +255,7 @@ class FlowTest {
         val plain = FakeSynth()
         ExportEngine(book, plan, ExportSettings("M1", 4, 64, listOf(0, 1, 2)), ExportStore(tmpDir()), plain, FakeEncoder()).run({ false })
         assertTrue(flowCalls < plain.calls.size, "flow $flowCalls vs plain ${plain.calls.size}")
+        assertTrue(synth.resets >= plan.size + 3, "the voice is told when a chunk or paragraph starts afresh: ${synth.resets} resets")
         assertTrue(plan.all { store.isChunkDone(it) })
         // every sentence has a start time, and they only move forward, even for sentences joined into one piece
         val starts = (0 until 8).map { store.sentenceStartMs(0, it) }
@@ -384,7 +387,7 @@ class StoreTest {
     @Test fun pocketSettingsRoundTripAndOldManifestsReadAsOpenvoice() {
         val store = ExportStore(tmpDir())
         val book = sampleBook()
-        val m = ExportManifest(7, "T", null, ExportStore.fingerprint(book), ExportSettings("custom:abc", 8, 48, listOf(0), true, 1f, ExportSettings.CLONE_POCKET, 30, 85), 5L)
+        val m = ExportManifest(7, "T", null, ExportStore.fingerprint(book), ExportSettings("custom:abc", 8, 48, listOf(0), true, 1f, ExportSettings.CLONE_POCKET, 30, 85, true, 2, true), 5L)
         store.writeManifest(m)
         assertEquals(m, store.readManifest())
         // a manifest written before these fields existed

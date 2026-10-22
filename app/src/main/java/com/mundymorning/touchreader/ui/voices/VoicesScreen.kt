@@ -63,6 +63,8 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
     var labPick by remember { mutableStateOf<VoiceProfile?>(null) }
     var labStart by remember { mutableIntStateOf(0) }
     var labPace by remember { mutableIntStateOf(100) }
+    var labDelivery by remember { mutableIntStateOf(1) }
+    var labLink by remember { mutableStateOf(false) }
     val labPlaying by container.samplePlayer.playingKey.collectAsState()
     val lang = Locale.getDefault().language
     val shown = remember(voices, allLanguages) { if (allLanguages) voices else voices.filter { it.language == lang || it.language.isEmpty() } }
@@ -169,7 +171,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                     },
                 )
                 if (labReady && container.voiceLibrary.sampleFile(v.id) != null) {
-                    TextButton({ val last = container.voiceLab.lastChoice(v.id); labStart = last?.first ?: 0; labPace = last?.second ?: 100; labPick = v }, Modifier.padding(start = 16.dp)) { Text("Voice preview: choose part and pace") }
+                    TextButton({ val last = container.voiceLab.lastChoice(v.id); labStart = last?.start ?: 0; labPace = last?.pace ?: 100; labDelivery = last?.delivery ?: 1; labLink = last?.link ?: false; labPick = v }, Modifier.padding(start = 16.dp)) { Text("Voice preview: part, pace and delivery") }
                 }
               }
             }
@@ -216,7 +218,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                         is com.mundymorning.touchreader.lab.LabState.Working -> Text(st.message + "\n\nThis can take a few minutes on a slower phone. Keep the app open.")
                         is com.mundymorning.touchreader.lab.LabState.Failed -> Text(st.message, color = MaterialTheme.colorScheme.error)
                         is com.mundymorning.touchreader.lab.LabState.Done -> {
-                            Text("A ${"%.0f".format(st.audioSeconds)} second sample was made, copying the voice from seconds ${st.fromSeconds} to ${st.fromSeconds + st.referenceSeconds.toInt()} of your saved recording${if (st.pacePercent < 100) ", slowed to ${st.pacePercent}% pace" else ""}, and played. Listen for how close it is to the real person.", style = MaterialTheme.typography.bodyMedium)
+                            Text("A ${"%.0f".format(st.audioSeconds)} second sample was made, copying the voice from seconds ${st.fromSeconds} to ${st.fromSeconds + st.referenceSeconds.toInt()} of your saved recording${if (st.pacePercent < 100) ", slowed to ${st.pacePercent}% pace" else ""}, ${listOf("steady", "normal", "lively")[st.delivery.coerceIn(0, 2)]} delivery${if (st.link) ", sentences linked" else ""}, and played. Listen for how close it is to the real person and how naturally it flows. What you chose here is what reading and audiobooks use for this voice.", style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 "Timings on this phone:\n" +
@@ -274,9 +276,29 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) { RadioButton(labPace == pc, null); Spacer(Modifier.width(12.dp)); Text(if (pc == 100) "100% (as the model speaks)" else "$pc%") }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Delivery", style = MaterialTheme.typography.titleSmall)
+                    Text("How much the voice varies from moment to moment. Steady is more even; Lively is more expressive but can sound less smooth.", style = MaterialTheme.typography.bodySmall)
+                    listOf(0 to "Steady", 1 to "Normal", 2 to "Lively").forEach { (d, name) ->
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(labDelivery == d, role = Role.RadioButton) { labDelivery = d },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) { RadioButton(labDelivery == d, null); Spacer(Modifier.width(12.dp)); Text(name) }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(labLink, role = Role.Switch) { labLink = !labLink },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Switch(labLink, null); Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("Link sentences (experimental)")
+                            Text("Each part starts from where the one before it ended. The voice model was not built for this, so it may help the flow or may make things worse: compare.", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
             },
-            confirmButton = { TextButton({ container.samplePlayer.stop(); container.voiceLab.make(v.id, v.name, labStart, labPace); labPick = null }) { Text("Make sample") } },
+            confirmButton = { TextButton({ container.samplePlayer.stop(); container.voiceLab.make(v.id, v.name, com.mundymorning.touchreader.tts.VoiceChoice(labStart, labPace, labDelivery, labLink)); labPick = null }) { Text("Make sample") } },
             dismissButton = { TextButton({ container.samplePlayer.stop(); labPick = null }) { Text("Cancel") } },
         )
     }

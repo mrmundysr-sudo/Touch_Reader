@@ -34,7 +34,12 @@ class PocketLive private constructor(
             val (embedding, _) = PocketNarrator.embeddingFor(tts, library, id, start)
             val v = tts.prepareVoice(embedding)
             voice = v
-            synth = tts.synthesizer(v, lsdSteps = 1, pace = { PocketNarrator.choice(library, id).second / 100.0 })
+            synth = tts.synthesizer(
+                v, lsdSteps = 1,
+                temperature = { PocketTts.Delivery.temperature(PocketNarrator.choice(library, id).delivery) },
+                pace = { PocketNarrator.choice(library, id).pace / 100.0 },
+                link = { PocketNarrator.choice(library, id).link },
+            )
             loadedId = id; loadedStart = start
         }
         return synth!!
@@ -43,10 +48,12 @@ class PocketLive private constructor(
     val synthesizer: Synthesizer = object : Synthesizer {
         override val sampleRate: Int get() = tts.sampleRate
         override fun synthesize(text: String, speed: Float, isCancelled: () -> Boolean): ShortArray = current().synthesize(text, speed, isCancelled)
+        override fun resetContext() { synth?.resetContext() }
         override fun release() { this@PocketLive.release() }
     }
 
     fun release() {
+        runCatching { synth?.release() }
         runCatching { voice?.close() }
         voice = null; synth = null
         runCatching { tts.close() }

@@ -25,6 +25,10 @@ data class ExportSettings(
      * separate sentences. Used for saved voices; books started before this existed keep reading sentence by sentence.
      */
     val flow: Boolean = false,
+    /** Saved voices: how much random variation the model adds (0 steady, 1 normal, 2 lively). */
+    val delivery: Int = 1,
+    /** Saved voices: let each piece start from where the one before it ended (experimental). */
+    val link: Boolean = false,
 ) {
     companion object {
         const val CLONE_OPENVOICE = "openvoice"
@@ -46,6 +50,8 @@ class Piece(
     /** Every sentence index [text] covers (one unless sentences were joined), and the length of each, to find where each starts in the audio. */
     val members: List<Int> = listOf(sentence),
     val memberChars: List<Int> = listOf(text.length),
+    /** The last piece of a paragraph (or the title): what follows is not a continuation of it. */
+    val paragraphEnd: Boolean = true,
 )
 
 object ExportPlanner {
@@ -102,7 +108,7 @@ object ExportPlanner {
             val paragraphEnd = paragraphEndsAfter(j)
             val pause = if (flow) (if (paragraphEnd) FLOW_PARAGRAPH_PAUSE_MS else FLOW_SENTENCE_PAUSE_MS) else (if (paragraphEnd) PARAGRAPH_PAUSE_MS else SENTENCE_PAUSE_MS)
             val members = (i..j).toList()
-            out += Piece(members.joinToString(" ") { chapter.text(it) }, pause, i, members, members.map { chapter.text(it).length })
+            out += Piece(members.joinToString(" ") { chapter.text(it) }, pause, i, members, members.map { chapter.text(it).length }, paragraphEnd || j == chapter.sentences.lastIndex)
             i = j + 1
         }
         return out

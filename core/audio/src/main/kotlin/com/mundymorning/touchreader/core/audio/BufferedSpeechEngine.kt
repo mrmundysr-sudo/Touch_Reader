@@ -81,6 +81,7 @@ class BufferedSpeechEngine(
             inFlight.set(0)
             slowNotified = false
         }
+        synthesizer.resetContext()
         sink.flush()
     }
 
@@ -112,6 +113,7 @@ class BufferedSpeechEngine(
             if (i == 0 && texts.size > 1) continue
             work += seconds; audio += pcm.size.toDouble() / synthesizer.sampleRate
         }
+        synthesizer.resetContext()
         return if (audio > 0) work / audio else null
     }
 
@@ -150,6 +152,7 @@ class BufferedSpeechEngine(
             stats.record(nanoTime() - t0, seconds)
             noteSpeed(nanoTime() - t0, seconds)
             checkSlow()
+            if (group.last().paragraphEnd) synthesizer.resetContext() // the next paragraph starts afresh
             val parts = if (group.size == 1) listOf(pcm) else AudioSplit.split(pcm, group.map { it.text.length.coerceAtLeast(1) }, synthesizer.sampleRate)
             for ((i, part) in parts.withIndex()) {
                 val last = i == parts.lastIndex

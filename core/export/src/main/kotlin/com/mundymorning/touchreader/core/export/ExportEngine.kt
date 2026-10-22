@@ -70,6 +70,7 @@ class ExportEngine(
         for (spec in pending) {
             if (isStopped()) return RunResult.Stopped
             val t0 = nanoTime()
+            synthesizer.resetContext() // chunks are independent so a stopped book can carry on from any of them
             val starts = LinkedHashMap<Int, Long>()
             var samples = 0L
             val rate = synthesizer.sampleRate
@@ -95,6 +96,7 @@ class ExportEngine(
                     val ends = AudioSplit.boundaries(audio, piece.memberChars, rate)
                     piece.members.forEachIndexed { k, m -> starts[m] = (pieceStart + (if (k == 0) 0 else ends[k - 1])) * 1000 / rate }
                 }
+                if (piece.paragraphEnd) synthesizer.resetContext()
                 out += audio; samples += audio.size
                 val gap = ShortArray(piece.pauseAfterMs * rate / 1000)
                 out += gap; samples += gap.size

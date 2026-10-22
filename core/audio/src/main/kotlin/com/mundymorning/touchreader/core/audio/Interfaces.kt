@@ -11,6 +11,12 @@ interface Synthesizer {
     fun synthesize(text: String, speed: Float, isCancelled: () -> Boolean): ShortArray
 
     fun release() {}
+
+    /**
+     * The next text spoken does not follow on from what was spoken before (a new paragraph, a jump, a restart), so a
+     * synthesizer that carries delivery over from sentence to sentence should forget it. Safe to call from any thread.
+     */
+    fun resetContext() {}
 }
 
 /** Where PCM goes to be heard (an AudioTrack on Android). */

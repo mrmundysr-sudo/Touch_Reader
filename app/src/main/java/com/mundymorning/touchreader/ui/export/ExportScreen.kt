@@ -30,6 +30,7 @@ import com.mundymorning.touchreader.export.formatDuration
 import com.mundymorning.touchreader.tts.Engines
 import com.mundymorning.touchreader.tts.NeuralVoice
 import com.mundymorning.touchreader.tts.PocketNarrator
+import com.mundymorning.touchreader.tts.VoiceChoice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -125,10 +126,11 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
     /** The settings for a new audiobook. A saved voice is copied by Pocket TTS from the part of the recording last chosen in the voice preview, at the pace chosen here. */
     fun newSettings(chapters: List<Int>): ExportSettings {
         val customVoice = voice.startsWith(Engines.CUSTOM_PREFIX)
-        val start = if (customVoice) PocketNarrator.choice(container.voiceLibrary, voice.removePrefix(Engines.CUSTOM_PREFIX)).first else 0
+        val ch = if (customVoice) PocketNarrator.choice(container.voiceLibrary, voice.removePrefix(Engines.CUSTOM_PREFIX)) else VoiceChoice(0, 100)
         return ExportSettings(
             voice, steps, kbps, chapters, announceChapters = true,
-            cloneEngine = ExportSettings.CLONE_POCKET, refStartSeconds = start, pacePercent = if (customVoice) pace else 100, flow = customVoice,
+            cloneEngine = ExportSettings.CLONE_POCKET, refStartSeconds = ch.start, pacePercent = if (customVoice) pace else 100, flow = customVoice,
+            delivery = ch.delivery, link = ch.link,
         )
     }
 
@@ -243,7 +245,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
                         }
                         if (custom) {
                             Text(
-                                "Your own voice is copied from your saved recording (15 seconds starting at ${PocketNarrator.choice(container.voiceLibrary, voice.removePrefix(Engines.CUSTOM_PREFIX)).first} s: change the part in Voices > Voice preview). " +
+                                "Your own voice is copied from your saved recording (15 seconds starting at ${PocketNarrator.choice(container.voiceLibrary, voice.removePrefix(Engines.CUSTOM_PREFIX)).first} s: change the part, delivery and linking in Voices > Voice preview). " +
                                     "It takes much longer than a built-in voice, and this phone needs to be timed to know how long.",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
                             )

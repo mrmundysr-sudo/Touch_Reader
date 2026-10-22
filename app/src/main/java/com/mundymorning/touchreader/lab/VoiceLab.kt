@@ -1,6 +1,6 @@
 package com.mundymorning.touchreader.lab
 
-import com.mundymorning.touchreader.core.audio.TimeStretch
+import com.mundymorning.touchreader.core.export.ExportPlanner
 import com.mundymorning.touchreader.core.pockettts.PocketTts
 import com.mundymorning.touchreader.core.voicestudio.Dsp
 import com.mundymorning.touchreader.core.voicestudio.Pcm
@@ -9,6 +9,7 @@ import com.mundymorning.touchreader.studio.SamplePlayer
 import com.mundymorning.touchreader.studio.VoiceLibrary
 import com.mundymorning.touchreader.tts.Engines
 import com.mundymorning.touchreader.tts.PocketNarrator
+import com.mundymorning.touchreader.tts.VoiceChoice
 import com.mundymorning.touchreader.voices.VoicePackManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +30,10 @@ sealed interface LabState {
         val referenceSeconds: Double,
         /** 100 = as the model spoke; lower = slowed down afterwards without changing pitch. */
         val pacePercent: Int,
+        /** 0 steady, 1 normal, 2 lively. */
+        val delivery: Int,
+        /** Whether each piece started from where the one before it ended (experimental). */
+        val link: Boolean,
     ) : LabState {
         /** Seconds of work per second of speech; below 1.0 a book could be read live on this phone. */
         val rtf: Double get() = speechSeconds / audioSeconds
@@ -94,9 +99,7 @@ class VoiceLab(
     val installed: Boolean get() = packs.installedDir(Engines.POCKET_PACK_ID) != null
 
     /** The part of the recording and the pace last used for this voice (start seconds, pace percent), if any. */
-    fun lastChoice(profileId: String): Pair<Int, Int>? = PocketNarrator.choiceOrNull(library, profileId)
-
-    private fun savePrefs(profileId: String, startSeconds: Int, pacePercent: Int) = PocketNarrator.saveChoice(library, profileId, startSeconds, pacePercent)
+    fun lastChoice(profileId: String): VoiceChoice? = PocketNarrator.choiceOrNull(library, profileId)
 
     /** Length of a saved recording in seconds, or null if it cannot be read. */
     fun recordingSeconds(profileId: String): Double? =
@@ -120,7 +123,7 @@ class VoiceLab(
         _state.value = LabState.Idle
     }
 
-    fun make(profileId: String, voiceName: String, startSeconds: Int = 0, pacePercent: Int = 100) {
+    fun make(profileId: String, voiceName: String, choice: VoiceChoice) {
         if (worker?.isAlive == true) return
         val dir = packs.installedDir(Engines.POCKET_PACK_ID) ?: run { _state.value = LabState.Failed(voiceName, "Install the voice lab download first."); return }
         val file = library.sampleFile(profileId) ?: run { _state.value = LabState.Failed(voiceName, "This voice has no saved recording."); return }
@@ -129,15 +132,15 @@ class VoiceLab(
         player.stop()
         runCatching { traceFile.writeText("") }
         _report.value = null
-        savePrefs(profileId, startSeconds, pacePercent)
-        trace("start: pace $pacePercent%, seconds $startSeconds to ${startSeconds + REFERENCE_SECONDS}, ${Runtime.getRuntime().availableProcessors()} cores")
+        PocketNarrator.saveChoice(library, profileId, choice) // what is heard here is what reading and audiobooks use
+        trace("start: pace ${choice.pace}%, delivery ${choice.delivery}, link ${choice.link}, seconds ${choice.start} to ${choice.start + REFERENCE_SECONDS}, ${Runtime.getRuntime().availableProcessors()} cores")
         _state.value = LabState.Working(voiceName, "Loading the model...")
-        worker = Thread({ execute(dir, file, profileId, voiceName, startSeconds, pacePercent) }, "tr-voice-lab").apply { isDaemon = true; start() }
+        worker = Thread({ execute(dir, profileId, voiceName, choice) }, "tr-voice-lab").apply { isDaemon = true; start() }
     }
 
-    private fun execute(dir: java.io.File, file: java.io.File, profileId: String, voiceName: String, startSeconds: Int, pacePercent: Int) {
+    private fun execute(dir: java.io.File, profileId: String, voiceName: String, choice: VoiceChoice) {
         try {
-            val threads = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
+            val threads = PocketNarrator.threads()
             val t0 = System.nanoTime()
             trace("loading the model")
             PocketTts.load(dir, threads).use { tts ->
@@ -145,41 +148,48 @@ class VoiceLab(
                 val loadSeconds = (System.nanoTime() - t0) / 1e9
                 if (cancelled) return
 
-                trace("studying the recording (seconds $startSeconds to ${startSeconds + REFERENCE_SECONDS})")
-                val (embedding, studiedIn) = PocketNarrator.embeddingFor(tts, library, profileId, startSeconds)
+                trace("studying the recording (seconds ${choice.start} to ${choice.start + REFERENCE_SECONDS})")
+                val (embedding, studiedIn) = PocketNarrator.embeddingFor(tts, library, profileId, choice.start)
                 val voiceSeconds = studiedIn
                 val cachedAlready = studiedIn == null
-                var used = 0.0
                 trace("recording studied")
-                used = embedding.frames * tts.bundle.samplesPerFrame.toDouble() / tts.bundle.sampleRate
+                val used = embedding.frames * tts.bundle.samplesPerFrame.toDouble() / tts.bundle.sampleRate
                 if (cancelled) return
 
                 trace("preparing the voice (${embedding.frames} frames)")
                 tts.prepareVoice(embedding).use { voice ->
                     trace("voice prepared")
-                    val gen = tts.generator()
-                    val out = ArrayList<FloatArray>()
+                    // exactly what reading and audiobooks do: sentences of a paragraph joined into pieces, trimmed, paced, with pauses between pieces
+                    val synth = tts.synthesizer(voice, { PocketTts.Delivery.temperature(choice.delivery) }, 1, { choice.pace / 100.0 }, { choice.link })
+                    val pieces = groupSentences(PARAGRAPH, ExportPlanner.FLOW_MAX_CHARS)
+                    val out = ArrayList<ShortArray>()
                     var work = 0.0
-                    for ((i, line) in LINES.withIndex()) {
+                    var spokenSamples = 0L
+                    for ((i, piece) in pieces.withIndex()) {
                         if (cancelled) return
-                        trace("making sentence ${i + 1}")
-                        _state.value = LabState.Working(voiceName, "Making sentence ${i + 1} of ${LINES.size}...")
+                        trace("making piece ${i + 1}")
+                        _state.value = LabState.Working(voiceName, "Making part ${i + 1} of ${pieces.size}...")
                         val s0 = System.nanoTime()
-                        val audio = gen.generate(line, voice) { cancelled }
-                        if (audio == null) {
-                            trace("the model made no sound for sentence ${i + 1}")
-                            if (!cancelled) _state.value = LabState.Failed(voiceName, "The model made no sound for a sentence.")
+                        val audio = synth.synthesize(piece, 1f) { cancelled }
+                        if (audio.isEmpty()) {
+                            if (!cancelled) _state.value = LabState.Failed(voiceName, "The model made no sound for part ${i + 1}.")
                             return
                         }
                         work += (System.nanoTime() - s0) / 1e9
+                        spokenSamples += audio.size
                         out += audio
+                        if (i < pieces.lastIndex) out += ShortArray(ExportPlanner.FLOW_SENTENCE_PAUSE_MS * tts.bundle.sampleRate / 1000)
                     }
-                    val all = FloatArray(out.sumOf { it.size }).also { a -> var o = 0; out.forEach { p -> p.copyInto(a, o); o += p.size } }
-                    val spoken = Pcm(tts.bundle.sampleRate, all)
-                    val pcm = if (pacePercent >= 100) spoken else Pcm(spoken.sampleRate, TimeStretch.stretch(all, pacePercent / 100.0))
+                    synth.release()
+                    val all = FloatArray(out.sumOf { it.size })
+                    var at = 0
+                    for (p in out) { for (k in p.indices) all[at + k] = p[k] / 32768f; at += p.size }
+                    val pcm = Pcm(tts.bundle.sampleRate, all)
                     sample = pcm
                     trace("DONE")
-                    _state.value = LabState.Done(voiceName, spoken.seconds, work, loadSeconds, voiceSeconds, cachedAlready, startSeconds, used, pacePercent)
+                    // seconds of speech before any slowing, so the speed figure means the same at every pace
+                    val unslowed = spokenSamples.toDouble() / tts.bundle.sampleRate * (choice.pace / 100.0)
+                    _state.value = LabState.Done(voiceName, unslowed, work, loadSeconds, voiceSeconds, cachedAlready, choice.start, used, choice.pace, choice.delivery, choice.link)
                     player.playPcm(PLAY_KEY, pcm)
                 }
             }
@@ -190,13 +200,25 @@ class VoiceLab(
         }
     }
 
+    /** Joins whole sentences into pieces of up to [maxChars], like narration does. */
+    private fun groupSentences(text: String, maxChars: Int): List<String> {
+        val sentences = text.split(Regex("(?<=[.!?\"”])\\s+")).filter { it.isNotBlank() }
+        val out = ArrayList<String>()
+        var cur = ""
+        for (s in sentences) {
+            if (cur.isNotEmpty() && cur.length + 1 + s.length > maxChars) { out += cur; cur = s } else cur = if (cur.isEmpty()) s else "$cur $s"
+        }
+        if (cur.isNotEmpty()) out += cur
+        return out
+    }
+
     private companion object {
         const val PLAY_KEY = "voice-lab"
         private const val REFERENCE_SECONDS = PocketNarrator.REFERENCE_SECONDS
-        val LINES = listOf(
-            "The old lighthouse stood quietly above the harbour while the evening tide came in.",
-            "She opened the heavy door and found a letter waiting on the small wooden table.",
-            "Nobody in the village could remember when the clock had last told the right time.",
-        )
+        /** A short paragraph with dialogue, to judge how it flows rather than single sentences. */
+        const val PARAGRAPH = "The old lighthouse stood quietly above the harbour while the evening tide came in. " +
+            "She opened the heavy door and found a letter waiting on the small wooden table. " +
+            "\"Is anyone here?\" she asked, but nobody answered. " +
+            "Outside, the wind began to rise, and the sea grew restless."
     }
 }

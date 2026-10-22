@@ -31,16 +31,20 @@ class PocketNarrator private constructor(
         private const val PREFS = "pocket-lab-prefs"
 
         /** The part of the recording (start, in seconds) and the pace (percent) last chosen for a saved voice, or null if never chosen. */
-        fun choiceOrNull(library: VoiceLibrary, profileId: String): Pair<Int, Int>? = runCatching {
-            val (a, b) = String(library.engineData(profileId, PREFS, "1")!!).split(",").map { it.trim().toInt() }
-            a to b.coerceIn(80, 100)
+        fun choiceOrNull(library: VoiceLibrary, profileId: String): VoiceChoice? = runCatching {
+            val f = String(library.engineData(profileId, PREFS, "1")!!).split(",").map { it.trim() }
+            VoiceChoice(f[0].toInt(), f[1].toInt().coerceIn(80, 100), f.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 2) ?: 1, f.getOrNull(3) == "1")
         }.getOrNull()
 
-        fun choice(library: VoiceLibrary, profileId: String): Pair<Int, Int> = choiceOrNull(library, profileId) ?: (0 to 100)
+        fun choice(library: VoiceLibrary, profileId: String): VoiceChoice = choiceOrNull(library, profileId) ?: VoiceChoice(0, 100)
 
-        fun saveChoice(library: VoiceLibrary, profileId: String, startSeconds: Int, pacePercent: Int) {
-            runCatching { library.saveEngineData(profileId, PREFS, "1", "$startSeconds,${pacePercent.coerceIn(80, 100)}".toByteArray()) }
+        fun saveChoice(library: VoiceLibrary, profileId: String, c: VoiceChoice) {
+            runCatching { library.saveEngineData(profileId, PREFS, "1", "${c.start},${c.pace.coerceIn(80, 100)},${c.delivery.coerceIn(0, 2)},${if (c.link) 1 else 0}".toByteArray()) }
         }
+
+        /** Changes the part and pace, keeping the delivery and linking choices. */
+        fun saveChoice(library: VoiceLibrary, profileId: String, startSeconds: Int, pacePercent: Int) =
+            saveChoice(library, profileId, choice(library, profileId).copy(start = startSeconds, pace = pacePercent))
 
         fun threads() = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
 
@@ -64,20 +68,28 @@ class PocketNarrator private constructor(
             return e to (System.nanoTime() - t0) / 1e9
         }
 
-        /** [lsdSteps]: 1 is faster, 2 is the "better quality" setting. [pace]: 1.0 as spoken, lower = slower. */
-        fun load(dir: File, library: VoiceLibrary, profileId: String, startSeconds: Int, lsdSteps: Int, pace: Double): PocketNarrator {
-            return load(dir, library, profileId, startSeconds, lsdSteps) { pace }
-        }
-
-        fun load(dir: File, library: VoiceLibrary, profileId: String, startSeconds: Int, lsdSteps: Int, pace: () -> Double): PocketNarrator {
+        /**
+         * [lsdSteps]: 1 is faster, 2 is the "better quality" setting. [pace]: 1.0 as spoken, lower = slower. [temperature] is the
+         * delivery (random variation) and [link] lets each piece carry on from the one before; all are read for every piece.
+         */
+        fun load(
+            dir: File, library: VoiceLibrary, profileId: String, startSeconds: Int, lsdSteps: Int,
+            pace: () -> Double, temperature: () -> Float = { 0.7f }, link: () -> Boolean = { false },
+        ): PocketNarrator {
             val tts = PocketTts.load(dir, threads())
             try {
                 val (embedding, _) = embeddingFor(tts, library, profileId, startSeconds)
                 val voice = tts.prepareVoice(embedding)
-                return PocketNarrator(tts, voice, tts.synthesizer(voice, lsdSteps = lsdSteps, pace = pace))
+                return PocketNarrator(tts, voice, tts.synthesizer(voice, temperature, lsdSteps, pace, link))
             } catch (t: Throwable) {
                 tts.close(); throw t
             }
         }
     }
+}
+
+/** What was last chosen for a saved voice: the part of the recording, the pace, the delivery (0 steady, 1 normal, 2 lively) and whether pieces are linked. */
+data class VoiceChoice(val start: Int, val pace: Int, val delivery: Int = 1, val link: Boolean = false) {
+    val first: Int get() = start
+    val second: Int get() = pace
 }

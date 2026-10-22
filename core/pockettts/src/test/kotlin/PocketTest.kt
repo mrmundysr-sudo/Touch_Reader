@@ -164,13 +164,20 @@ private class FakeRuntime(val eosAt: Int? = null, val conditioningDim: Int = 3, 
     val sentences = ArrayList<LongArray>()
     var closedSentences = 0
     var closedDecoders = 0
+    var canLink = false
+    val startFrames = ArrayList<Int>()
+    val madeStates = ArrayList<FakeState>()
 
     override fun encodeVoice(samples24k: FloatArray) = FloatArray(conditioningDim * 5) { it.toFloat() }
     override fun prepareVoice(embeddings: FloatArray) = object : PocketVoice { override fun close() {} }
+    class FakeState(override val frames: Int) : PocketVoice { var closed = false; override fun close() { closed = true } }
+
     override fun newSentence(voice: PocketVoice, tokenIds: LongArray): PocketSentence {
         sentences += tokenIds
+        startFrames += voice.frames
         var n = 0
         return object : PocketSentence {
+            override fun detachAsVoice(framesUsed: Int): PocketVoice? = if (!canLink) null else FakeState(framesUsed).also { madeStates += it }
             override fun step(previousLatent: FloatArray?): PocketSentence.Step {
                 stepInputs += previousLatent
                 val i = n++
@@ -187,6 +194,69 @@ private class FakeRuntime(val eosAt: Int? = null, val conditioningDim: Int = 3, 
         override fun close() { closedDecoders++ }
     }
     override fun close() {}
+}
+
+class PocketLinkingTest {
+    private val tokenizer = charModel()
+    private val base = object : PocketVoice { override val frames = 100; override fun close() {} }
+    private fun gen(rt: FakeRuntime, maxTokens: Int = 40): PocketGenerator {
+        val b = testBundle(maxTokens = maxTokens)
+        return PocketGenerator(b, PocketText(tokenizer, b), rt, 0f, 1, seed = 1L)
+    }
+    private val twoSentences = "The first sentence is right here. The second sentence is a bit different."
+
+    @Test fun withoutLinkingEveryChunkStartsFromTheBareVoice() {
+        val rt = FakeRuntime(eosAt = 2).also { it.canLink = true }
+        val r = gen(rt).generateLinked(twoSentences, base, null, false)!!
+        assertNull(r.state)
+        assertTrue(rt.sentences.size >= 2)
+        assertTrue(rt.startFrames.all { it == 100 }, rt.startFrames.toString())
+        assertTrue(rt.madeStates.isEmpty())
+    }
+
+    @Test fun withLinkingEachChunkStartsWhereTheLastLeftOffAndTheCallerGetsTheFinalState() {
+        val rt = FakeRuntime(eosAt = 2).also { it.canLink = true }
+        val r = gen(rt).generateLinked(twoSentences, base, null, true)!!
+        assertEquals(100, rt.startFrames[0])
+        assertTrue(rt.startFrames[1] > 100, "second chunk continues: ${rt.startFrames}")
+        assertTrue(rt.startFrames[1] == 100 + rt.sentences[0].size + 5, "frames = voice + text tokens + spoken frames: ${rt.startFrames}")
+        assertNotNull(r.state)
+        assertSame(rt.madeStates.last(), r.state)
+        // intermediate states were closed, the one handed over was not
+        assertTrue(rt.madeStates.dropLast(1).all { it.closed })
+        assertFalse((r.state as FakeRuntime.FakeState).closed)
+    }
+
+    @Test fun aContinuationFromAnEarlierCallIsUsedAndNotClosedByTheGenerator() {
+        val rt = FakeRuntime(eosAt = 2).also { it.canLink = true }
+        val earlier = FakeRuntime.FakeState(300)
+        gen(rt).generateLinked("Short one.", base, earlier, true)!!
+        assertEquals(300, rt.startFrames[0])
+        assertFalse(earlier.closed, "the caller owns it")
+    }
+
+    @Test fun whenTheMemoryWouldRunOutItStartsAgainFromTheBareVoice() {
+        val rt = FakeRuntime(eosAt = 2).also { it.canLink = true }
+        val nearlyFull = FakeRuntime.FakeState(890)
+        gen(rt).generateLinked("Short one.", base, nearlyFull, true)!!
+        assertEquals(100, rt.startFrames[0], rt.startFrames.toString())
+    }
+
+    @Test fun aRuntimeThatCannotLinkStillWorks() {
+        val rt = FakeRuntime(eosAt = 2)
+        val r = gen(rt).generateLinked(twoSentences, base, null, true)!!
+        assertNull(r.state)
+        assertTrue(r.audio.isNotEmpty())
+        assertTrue(rt.startFrames.all { it == 100 })
+    }
+
+    @Test fun cancellingFreesTheStatesItMade() {
+        val rt = FakeRuntime(eosAt = 2).also { it.canLink = true }
+        var polls = 0
+        val r = gen(rt).generateLinked(twoSentences, base, null, true) { ++polls > 12 }
+        assertNull(r)
+        assertTrue(rt.madeStates.all { it.closed }, "nothing left open")
+    }
 }
 
 class PocketGeneratorTest {
@@ -307,11 +377,56 @@ class PocketTtsFacadeTest {
 
     @Test fun theSynthesizerGivesSixteenBitAudioAtTwentyFourKilohertz() {
         val t = tts(FakeRuntime(eosAt = 2))
-        val synth = t.synthesizer(object : PocketVoice { override fun close() {} }, temperature = 0f)
+        val synth = t.synthesizer(object : PocketVoice { override fun close() {} }, temperature = { 0f })
         assertEquals(24000, synth.sampleRate)
         val pcm = synth.synthesize("Hello there my good friend.", 1f) { false }
         assertTrue(pcm.isNotEmpty())
         assertTrue(abs(pcm[0].toInt() - (0.1f * 32767).toInt()) <= 1)
         assertEquals(0, synth.synthesize("Hello there my good friend.", 1f) { true }.size)
+    }
+}
+
+class SynthesizerLinkTest {
+    private val tokenizer = charModel()
+    private fun tts(rt: PocketRuntime) = PocketTts.forTesting(testBundle(), tokenizer, rt)
+    private val voice = object : PocketVoice { override val frames = 50; override fun close() {} }
+
+    @Test fun linkingCarriesOneCallsEndingIntoTheNextUntilReset() {
+        val rt = FakeRuntime(eosAt = 2).also { it.canLink = true }
+        val synth = tts(rt).synthesizer(voice, link = { true })
+        synth.synthesize("First piece here.", 1f) { false }
+        synth.synthesize("Second piece here.", 1f) { false }
+        assertEquals(50, rt.startFrames[0]); assertTrue(rt.startFrames[1] > 50, rt.startFrames.toString())
+        synth.resetContext()
+        synth.synthesize("A new paragraph.", 1f) { false }
+        assertEquals(50, rt.startFrames[2], "after a reset it starts from the bare voice")
+        synth.release()
+        assertTrue(rt.madeStates.all { it.closed }, "nothing left open")
+    }
+
+    @Test fun withoutLinkingNothingIsCarried() {
+        val rt = FakeRuntime(eosAt = 2).also { it.canLink = true }
+        val synth = tts(rt).synthesizer(voice)
+        synth.synthesize("First piece here.", 1f) { false }
+        synth.synthesize("Second piece here.", 1f) { false }
+        assertTrue(rt.startFrames.all { it == 50 })
+        assertTrue(rt.madeStates.isEmpty())
+    }
+
+    @Test fun switchingLinkingOffDropsWhatWasCarried() {
+        val rt = FakeRuntime(eosAt = 2).also { it.canLink = true }
+        var link = true
+        val synth = tts(rt).synthesizer(voice, link = { link })
+        synth.synthesize("First piece here.", 1f) { false }
+        link = false
+        synth.synthesize("Second piece here.", 1f) { false }
+        assertTrue(rt.madeStates.all { it.closed })
+        assertEquals(50, rt.startFrames[1])
+    }
+
+    @Test fun deliveryChoicesMapToIncreasingTemperatures() {
+        val t = listOf(PocketTts.Delivery.STEADY, PocketTts.Delivery.NORMAL, PocketTts.Delivery.LIVELY).map { PocketTts.Delivery.temperature(it) }
+        assertTrue(t[0] < t[1] && t[1] < t[2], t.toString())
+        assertEquals(t[1], PocketTts.Delivery.temperature(99))
     }
 }
