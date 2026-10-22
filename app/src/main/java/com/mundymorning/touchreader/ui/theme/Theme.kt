@@ -24,7 +24,7 @@ private val Parchment = lightColorScheme(
     primary = Color(0xFF6B3A1F), onPrimary = Color(0xFFFFF8E7),
     primaryContainer = Color(0xFFEACB93), onPrimaryContainer = Color(0xFF3A2312),
     secondary = Color(0xFF7A2E26), onSecondary = Color(0xFFFFF0ED),
-    secondaryContainer = Color(0xFFF1CFC8), onSecondaryContainer = Color(0xFF3A100B),
+    secondaryContainer = Color(0xFFE6D2A8), onSecondaryContainer = Color(0xFF3A2312),
     tertiary = Color(0xFF1F6FB5), onTertiary = Color.White,
     tertiaryContainer = Color(0xFFCFE4F7), onTertiaryContainer = Color(0xFF0A2A47),
     background = Color(0xFFF6ECD8), onBackground = Color(0xFF2A1B10),
