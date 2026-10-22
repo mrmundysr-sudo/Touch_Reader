@@ -256,6 +256,7 @@ private fun BlockText(block: Block, highlight: IntRange?, hl: androidx.compose.u
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PlayerPanel(ui: com.mundymorning.touchreader.playback.PlayerUi, book: ReaderBook, onSheet: (Sheet) -> Unit, onToggle: () -> Unit, controller: com.mundymorning.touchreader.playback.PlaybackController) {
     val framed = hasArt("player_bar")
