@@ -1,3 +1,4 @@
+import com.mundymorning.touchreader.core.audio.AudioPolish
 import com.mundymorning.touchreader.core.audio.AudioSplit
 import com.mundymorning.touchreader.core.audio.AudioTrim
 import kotlin.math.PI
@@ -68,5 +69,64 @@ class AudioShapeTest {
     @Test fun oneSentenceIsReturnedWhole() {
         val pcm = ShortArray(5000)
         assertEquals(listOf(5000), AudioSplit.split(pcm, listOf(7), rate).map { it.size })
+    }
+}
+
+class AudioPolishTest {
+    private val rate = 24000
+    private fun speech(amp: Double, ms: Int = 1000) = FloatArray(rate * ms / 1000) { (amp * sin(2 * PI * 180 * it / rate)).toFloat() }
+    private fun activeRms(x: FloatArray): Double {
+        val frame = rate / 100
+        var sum = 0.0; var n = 0
+        var f = 0
+        while (f + frame <= x.size) {
+            var e = 0.0
+            for (i in f until f + frame) e += x[i].toDouble() * x[i]
+            if (Math.sqrt(e / frame) > 0.012) { sum += e; n += frame }
+            f += frame
+        }
+        return Math.sqrt(sum / n)
+    }
+
+    @Test fun quietAndLoudPiecesEndUpAboutAsLoud() {
+        val quiet = AudioPolish.normalizeLevel(speech(0.12), rate)
+        val loud = AudioPolish.normalizeLevel(speech(0.4), rate)
+        assertTrue(abs(activeRms(quiet) / activeRms(loud) - 1.0) < 0.35, "${activeRms(quiet)} vs ${activeRms(loud)}")
+    }
+
+    @Test fun pausesDoNotCountAsQuietSpeech() {
+        val withPause = speech(0.3, 500) + FloatArray(rate) + speech(0.3, 500)
+        val gained = AudioPolish.normalizeLevel(withPause, rate)
+        val ratio = activeRms(gained) / activeRms(withPause)
+        // the same speech with or without the pause gets the same gain
+        val plain = AudioPolish.normalizeLevel(speech(0.3, 1000), rate)
+        assertTrue(abs(ratio - activeRms(plain) / activeRms(speech(0.3, 1000))) < 0.02)
+    }
+
+    @Test fun gainIsLimitedAndNeverClips() {
+        val veryQuiet = speech(0.03)
+        assertTrue(activeRms(AudioPolish.normalizeLevel(veryQuiet, rate)) <= activeRms(veryQuiet) * 1.71)
+        val hot = speech(0.9)
+        assertTrue(AudioPolish.normalizeLevel(hot, rate).maxOf { abs(it) } <= 0.971f)
+    }
+
+    @Test fun silenceIsLeftAlone() {
+        val silent = FloatArray(rate)
+        assertSame(silent, AudioPolish.normalizeLevel(silent, rate))
+    }
+
+    @Test fun fadesMakeBothEndsStartAndStopAtZeroWithoutTouchingTheMiddle() {
+        val x = FloatArray(rate) { 0.5f }
+        val y = AudioPolish.fade(x, rate)
+        assertEquals(0f, y.first(), 1e-6f); assertEquals(0f, y.last(), 1e-6f)
+        assertEquals(0.5f, y[rate / 2], 1e-6f)
+        val fadeIn = rate * 10 / 1000; val fadeOut = rate * 40 / 1000
+        assertTrue(y[fadeIn / 2] in 0.2f..0.3f, "halfway through the fade in: ${y[fadeIn / 2]}")
+        assertTrue(y[y.size - fadeOut / 2] in 0.2f..0.3f)
+    }
+
+    @Test fun veryShortAudioIsFadedWithoutErrors() {
+        val y = AudioPolish.fade(FloatArray(100) { 1f }, rate)
+        assertEquals(100, y.size); assertEquals(0f, y.first(), 1e-6f)
     }
 }

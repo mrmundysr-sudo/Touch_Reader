@@ -1,5 +1,6 @@
 package com.mundymorning.touchreader.core.pockettts
 
+import com.mundymorning.touchreader.core.audio.AudioPolish
 import com.mundymorning.touchreader.core.audio.AudioTrim
 import com.mundymorning.touchreader.core.audio.Synthesizer
 import com.mundymorning.touchreader.core.audio.TimeStretch
@@ -81,7 +82,10 @@ class PocketTts private constructor(
                 val factor = (pace() * speed).coerceIn(0.5, 2.0)
                 // the model leaves a little quiet before and after what it says: cut it so the pauses can be set on purpose
                 val trimmed = AudioTrim.trim(raw, bundle.sampleRate)
-                val f = if (kotlin.math.abs(factor - 1.0) < 0.01) trimmed else TimeStretch.stretch(trimmed, factor)
+                // pieces are made separately, so even out their loudness, then fade the edges (after any slowing, so the fades stay exact)
+                val leveled = AudioPolish.normalizeLevel(trimmed, bundle.sampleRate)
+                val paced = if (kotlin.math.abs(factor - 1.0) < 0.01) leveled else TimeStretch.stretch(leveled, factor)
+                val f = AudioPolish.fade(paced, bundle.sampleRate)
                 return ShortArray(f.size) { (f[it] * 32767f).coerceIn(-32768f, 32767f).toInt().toShort() }
             }
         }

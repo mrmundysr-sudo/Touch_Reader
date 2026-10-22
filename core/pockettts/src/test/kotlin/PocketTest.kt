@@ -381,7 +381,10 @@ class PocketTtsFacadeTest {
         assertEquals(24000, synth.sampleRate)
         val pcm = synth.synthesize("Hello there my good friend.", 1f) { false }
         assertTrue(pcm.isNotEmpty())
-        assertTrue(abs(pcm[0].toInt() - (0.1f * 32767).toInt()) <= 1)
+        assertEquals(0, pcm[0].toInt(), "faded in")
+        assertEquals(0, pcm.last().toInt().let { abs(it) }.coerceAtMost(1), "faded out")
+        // the fake model speaks at a constant 0.1, which is brought up to the target loudness (0.14) in the middle
+        assertTrue(abs(pcm[pcm.size / 2].toInt() - (0.14f * 32767).toInt()) <= 700, "middle sample ${pcm[pcm.size / 2]}")
         assertEquals(0, synth.synthesize("Hello there my good friend.", 1f) { true }.size)
     }
 }

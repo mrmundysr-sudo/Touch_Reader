@@ -8,10 +8,10 @@ object AudioTrim {
     private const val FRAME_MS = 10
 
     /**
-     * Removes leading and trailing audio whose level stays below [threshold] (about -38 dB), keeping [leadMs] before the
+     * Removes leading and trailing audio whose level stays below [threshold] (about -40 dB), keeping [leadMs] before the
      * first sound and [tailMs] after the last so nothing is clipped. Audio that is silent throughout is returned as is.
      */
-    fun trim(x: FloatArray, sampleRate: Int, threshold: Float = 0.012f, leadMs: Int = 40, tailMs: Int = 90): FloatArray {
+    fun trim(x: FloatArray, sampleRate: Int, threshold: Float = 0.01f, leadMs: Int = 50, tailMs: Int = 90): FloatArray {
         val frame = sampleRate * FRAME_MS / 1000
         if (frame <= 0 || x.size < frame * 2) return x
         fun loud(from: Int): Boolean {
@@ -83,5 +83,50 @@ object AudioSplit {
             at += frame / 2
         }
         return best
+    }
+}
+
+/**
+ * Evens out how separately generated pieces of speech sound where they meet: the model speaks each piece at a slightly
+ * different loudness and stops abruptly a few frames after the last word, so joins can be heard as a jump in volume or a chop.
+ */
+object AudioPolish {
+    /**
+     * Scales [x] so the loudness of the speech in it (ignoring pauses) is about [target], within [minGain]..[maxGain] and
+     * without clipping. Audio with no speech in it is returned as is.
+     */
+    fun normalizeLevel(
+        x: FloatArray, sampleRate: Int, target: Float = 0.14f, minGain: Float = 0.6f, maxGain: Float = 1.7f, threshold: Float = 0.012f,
+    ): FloatArray {
+        val frame = sampleRate * 10 / 1000
+        if (frame <= 0 || x.size < frame) return x
+        var sum = 0.0
+        var n = 0L
+        var f = 0
+        while (f + frame <= x.size) {
+            var e = 0.0
+            for (i in f until f + frame) e += x[i].toDouble() * x[i]
+            if (sqrt(e / frame) > threshold) { sum += e; n += frame }
+            f += frame
+        }
+        if (n == 0L) return x
+        val rms = sqrt(sum / n)
+        var peak = 0f
+        for (v in x) peak = maxOf(peak, abs(v))
+        var gain = (target / rms).toFloat().coerceIn(minGain, maxGain)
+        if (peak * gain > 0.97f) gain = 0.97f / peak
+        if (abs(gain - 1f) < 0.02f) return x
+        return FloatArray(x.size) { x[it] * gain }
+    }
+
+    /** A short raised-cosine fade in at the start and a longer one out at the end, so a piece never starts or stops with a click or a chop. */
+    fun fade(x: FloatArray, sampleRate: Int, inMs: Int = 10, outMs: Int = 40): FloatArray {
+        if (x.isEmpty()) return x
+        val out = x.copyOf()
+        val fin = minOf(out.size / 2, sampleRate * inMs / 1000)
+        val fout = minOf(out.size / 2, sampleRate * outMs / 1000)
+        for (i in 0 until fin) out[i] *= (0.5 - 0.5 * kotlin.math.cos(Math.PI * i / fin)).toFloat()
+        for (i in 0 until fout) out[out.size - 1 - i] *= (0.5 - 0.5 * kotlin.math.cos(Math.PI * i / fout)).toFloat()
+        return out
     }
 }
