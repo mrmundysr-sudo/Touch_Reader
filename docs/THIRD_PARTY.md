@@ -12,6 +12,7 @@ Touch Reader (Mundy Morning Studios) includes or downloads the following. Licenc
 | Kotlin, kotlinx.coroutines | Language and concurrency | Apache-2.0 |
 | PDFBox-Android (`com.tom-roush:pdfbox-android`) | PDF text extraction | Apache-2.0 |
 | jsoup | HTML and EPUB parsing | MIT |
+| Playfair Display (headings) and Lora (book text), embedded unmodified | Fonts | SIL Open Font Licence 1.1 (texts in `docs/licenses/`) |
 | ONNX Runtime (`onnxruntime-android`) | Runs the neural voices on the phone | MIT |
 
 ## Optional downloads (not part of the APK unless a test build bundles them)

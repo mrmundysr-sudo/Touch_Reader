@@ -73,7 +73,7 @@ fun SettingsScreen(container: AppContainer) {
                 Spacer(Modifier.height(12.dp))
                 Text("Open-source components", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "Touch Reader — Apache License 2.0\nAndroidX, Jetpack Compose, Room — Apache License 2.0\nPDFBox-Android — Apache License 2.0\nONNX Runtime — MIT License\nSupertonic code — MIT License; Supertonic 3 model — BigScience OpenRAIL-M\nPocket TTS by Kyutai (ONNX export by KevinAHM) — CC-BY-4.0; a voice may only be copied with the person's consent\njsoup — MIT License\nKotlin and kotlinx.coroutines — Apache License 2.0",
+                    "Touch Reader — Apache License 2.0\nAndroidX, Jetpack Compose, Room — Apache License 2.0\nPDFBox-Android — Apache License 2.0\nONNX Runtime — MIT License\nSupertonic code — MIT License; Supertonic 3 model — BigScience OpenRAIL-M\nPocket TTS by Kyutai (ONNX export by KevinAHM) — CC-BY-4.0; a voice may only be copied with the person's consent\njsoup — MIT License\nPlayfair Display and Lora fonts — SIL Open Font License\nKotlin and kotlinx.coroutines — Apache License 2.0",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

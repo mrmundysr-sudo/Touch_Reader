@@ -4,9 +4,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.mundymorning.touchreader.R
 
 /*
  * "The study": walnut wood, oxblood leather, brass and parchment, taken from the splash artwork.
@@ -65,11 +69,27 @@ private val HighContrast = darkColorScheme(
     inverseSurface = Color.White, inverseOnSurface = Color.Black, inversePrimary = Color(0xFF6B3A1F),
 )
 
-val ReaderFont = FontFamily.Serif
+/**
+ * Playfair Display for headings and Lora for the book text, both SIL Open Font Licence and embedded unmodified (the weights are
+ * chosen at run time; on Android 7 the plain weight of the same face is used). Licence texts: docs/licenses.
+ */
+@OptIn(ExperimentalTextApi::class)
+val DisplayFont = FontFamily(
+    Font(R.font.playfair_display, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+    Font(R.font.playfair_display, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+    Font(R.font.playfair_display, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+)
+
+@OptIn(ExperimentalTextApi::class)
+val ReaderFont = FontFamily(
+    Font(R.font.lora, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+    Font(R.font.lora, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+    Font(R.font.lora, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+)
 
 /** Headings are set in a serif, like the book spines in the artwork; body text and buttons stay in the plain system face for legibility. */
 private val StudyTypography = Typography().let { t ->
-    fun androidx.compose.ui.text.TextStyle.serif(w: FontWeight = FontWeight.SemiBold) = copy(fontFamily = FontFamily.Serif, fontWeight = w)
+    fun androidx.compose.ui.text.TextStyle.serif(w: FontWeight = FontWeight.SemiBold) = copy(fontFamily = DisplayFont, fontWeight = w)
     t.copy(
         displayLarge = t.displayLarge.serif(), displayMedium = t.displayMedium.serif(), displaySmall = t.displaySmall.serif(),
         headlineLarge = t.headlineLarge.serif(), headlineMedium = t.headlineMedium.serif(), headlineSmall = t.headlineSmall.serif(),
