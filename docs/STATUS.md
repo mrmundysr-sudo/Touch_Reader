@@ -146,4 +146,4 @@ Why: OpenVoice conversion only gets the tone colour (voice-match 0.87 but judged
 
 Install the debug APK on a real, ideally low-end, phone and run the manual checklist: import one file of each
 format, listen with the screen off, Bluetooth headset buttons, kill/restart the app and confirm position restore.
-Fix what breaks. Then decide the licensing question above, and measure any candidate neural engine on that same phone before integrating it.
+Fix what breaks, and measure any candidate neural engine on that same phone before integrating it. (Licence decided: Apache-2.0, Mundy Morning Studios; see LICENSE, NOTICE and docs/THIRD_PARTY.md. Legal review before a public store release is still advisable.)

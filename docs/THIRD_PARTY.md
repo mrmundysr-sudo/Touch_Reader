@@ -1,5 +1,7 @@
 # Third-party components and licences
 
+Touch Reader's own code is licensed under the **Apache License 2.0**, Copyright 2026 Mundy Morning Studios (see `LICENSE` and `NOTICE`). That licence covers this repository only: the voice models below are downloaded separately and keep their own licences and terms.
+
 Touch Reader (Mundy Morning Studios) includes or downloads the following. Licence texts are in each project; this list says what is used and under which terms.
 
 ## Libraries built into the app
@@ -10,7 +12,7 @@ Touch Reader (Mundy Morning Studios) includes or downloads the following. Licenc
 | Kotlin, kotlinx.coroutines | Language and concurrency | Apache-2.0 |
 | PDFBox-Android (`com.tom-roush:pdfbox-android`) | PDF text extraction | Apache-2.0 |
 | jsoup | HTML and EPUB parsing | MIT |
-| ONNX Runtime (`onnxruntime-android`) | Runs the neural voice and the cloning add-on on the phone | MIT |
+| ONNX Runtime (`onnxruntime-android`) | Runs the neural voices on the phone | MIT |
 
 ## Optional downloads (not part of the APK unless a test build bundles them)
 
@@ -18,11 +20,11 @@ Touch Reader (Mundy Morning Studios) includes or downloads the following. Licenc
 |---|---|---|---|
 | **Supertonic 3** neural voice (weights) | Hugging Face, `supertone-oss-archive/supertonic-3`, pinned revision `aafc6e32…` | **BigScience OpenRAIL-M** | Free, including commercial use, with use restrictions that the app shows and asks the user to accept before download. The licence file is stored with the model. Restrictions include: no impersonation without consent; machine-generated content must be disclosed as such when shared; no medical advice; no legal/law-enforcement/immigration decisions. |
 | Supertonic sample code (ported to Kotlin in `core/supertonic`) | `supertone-oss-archive/supertonic` | MIT, Copyright (c) 2025 Supertone Inc. | |
-| **OpenVoice V2** tone-colour converter | `myshell-ai/OpenVoice`, weights `myshell-ai/OpenVoiceV2` @ `f36e7ed` | MIT, Copyright 2024 MyShell.ai | The checkpoint is **converted to ONNX** by `scripts/build_converter_pack.py` (a modification); the licence and a modification notice ship inside the pack. |
+| **Pocket TTS** voice cloning (weights, via an ONNX export) | Kyutai's model, exported to ONNX by KevinAHM: Hugging Face `KevinAHM/pocket-tts-onnx`, pinned revision `58a6d00c…` (English bundle `english_2026-04`) | **CC-BY-4.0** (weights); MIT (Kyutai's code) | Credit: Kyutai (model), KevinAHM (ONNX export). Kyutai's terms prohibit copying a voice without the person's explicit, lawful consent and impersonation; the app shows this and asks the user to accept before download. The licence file is saved with the files. The Kotlin port in `core/pockettts` was written for this app and checked against Kyutai's reference behaviour; the model is run unmodified (the community export uses int8 quantised parts). |
 
 ## Used only while developing (not shipped)
 
-Chatterbox (MIT) and the OpenVoice code were run in CI probes to measure feasibility. Synthetic voices only were used as test input.
+Chatterbox (MIT), OpenVoice (MIT) and the Pocket TTS reference code (MIT) were run in CI probes to measure feasibility. Synthetic voices only were used as test input. The OpenVoice tone-converter add-on was shipped earlier and has since been removed from the app.
 
 ## Notes
 

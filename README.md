@@ -8,6 +8,10 @@ Offline-first Android app that turns documents into audiobooks. Free, no account
 See [docs/STATUS.md](docs/STATUS.md) for exactly what works, what is untested, and what is not built.
 Engine research and licensing notes: [docs/RESEARCH.md](docs/RESEARCH.md).
 
+## Licence
+
+Apache License 2.0, Copyright 2026 Mundy Morning Studios: see [LICENSE](LICENSE) and [NOTICE](NOTICE). The voice models the app downloads are not part of this repository and keep their own licences and terms (including Kyutai's rule that a voice may only be copied with the person's consent): see [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md).
+
 ## Layout
 
 | Module | Kind | Purpose |

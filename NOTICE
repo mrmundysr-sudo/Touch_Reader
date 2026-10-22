@@ -1,0 +1,14 @@
+Touch Reader
+Copyright 2026 Mundy Morning Studios
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It uses open-source libraries built into the app, and downloads voice models that stay under their own licences
+and terms (they are not part of this repository and are not covered by its licence). The full list, with the terms
+and credits each one requires, is in docs/THIRD_PARTY.md. In particular:
+
+  - Pocket TTS, by Kyutai (voice cloning), weights under CC-BY-4.0, via the ONNX export by KevinAHM on Hugging Face.
+    Its terms prohibit copying a voice without the person's explicit, lawful consent. The app shows these terms
+    before the download and the licence is saved with the files.
+  - Supertonic 3, by Supertone Inc. (built-in voices), under the BigScience OpenRAIL-M licence, with use restrictions.
+  - ONNX Runtime, by Microsoft (MIT).
