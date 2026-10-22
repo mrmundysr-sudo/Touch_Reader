@@ -64,3 +64,26 @@ class ReaderBookTest {
         assertEquals(Position(1, 0), b.positionAt(1f)) // clamps to last sentence
     }
 }
+
+class AbbreviationSegmentationTest {
+    private fun sentences(t: String) = SentenceSegmenter.segment(t, 0).map { t.substring(it.start, it.end) }
+
+    @Test fun aTitleBeforeANameDoesNotEndTheSentence() {
+        assertEquals(listOf("Mr. Holmes sat down.", "Mrs. Hudson brought tea."), sentences("Mr. Holmes sat down. Mrs. Hudson brought tea."))
+        assertEquals(listOf("She thanked Dr. Watson warmly.", "He bowed."), sentences("She thanked Dr. Watson warmly. He bowed."))
+        assertEquals(listOf("Prof. Moriarty and Capt. Nemo met."), sentences("Prof. Moriarty and Capt. Nemo met."))
+    }
+
+    @Test fun realSentenceEndsStillSplit() {
+        assertEquals(listOf("It was late.", "He left.", "She stayed."), sentences("It was late. He left. She stayed."))
+        assertEquals(listOf("Who is Mr. Smith?", "Nobody knew."), sentences("Who is Mr. Smith? Nobody knew."))
+    }
+
+    @Test fun anAbbreviationAtTheVeryEndIsKept() {
+        assertEquals(listOf("He called out to Dr."), sentences("He called out to Dr."))
+    }
+
+    @Test fun wordsThatMerelyEndInTheLettersAreNotAbbreviations() {
+        assertEquals(listOf("I am a Gunner.", "Next."), sentences("I am a Gunner. Next."))
+    }
+}

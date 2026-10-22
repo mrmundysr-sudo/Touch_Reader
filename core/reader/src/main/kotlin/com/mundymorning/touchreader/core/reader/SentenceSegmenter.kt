@@ -17,11 +17,28 @@ object SentenceSegmenter {
         var start = it.first()
         var end = it.next()
         while (end != BreakIterator.DONE) {
-            addTrimmed(text, block, start, end, out)
-            start = end
+            // the break iterator ends a sentence after "Mr." or "Dr."; carry on to the real end
+            var e = end
+            while (endsWithAbbreviation(text, e)) {
+                val next = it.next()
+                if (next == BreakIterator.DONE) break
+                e = next
+            }
+            addTrimmed(text, block, start, e, out)
+            start = e
             end = it.next()
         }
         return out
+    }
+
+    /** Titles and the like that are followed by a name, so the full stop after them is not the end of a sentence. */
+    private val abbreviation = Regex("(?:^|[^A-Za-z])(?:Mr|Mrs|Ms|Mx|Dr|Prof|Sr|Jr|St|Mt|Gen|Col|Capt|Cpl|Lt|Sgt|Maj|Cmdr|Adm|Rev|Hon|Gov|Sen|Rep|Pres|Fr|Messrs|Mmes|Mme|Mlle|Esq|vs)\\.$")
+
+    private fun endsWithAbbreviation(text: String, end: Int): Boolean {
+        var b = end
+        while (b > 0 && text[b - 1].isWhitespace()) b--
+        if (b == 0 || text[b - 1] != '.') return false
+        return abbreviation.containsMatchIn(text.substring(maxOf(0, b - 12), b))
     }
 
     private fun addTrimmed(text: String, block: Int, s: Int, e: Int, out: MutableList<Sentence>) {

@@ -430,3 +430,16 @@ class SynthesizerLinkTest {
         assertEquals(t[1], PocketTts.Delivery.temperature(99))
     }
 }
+
+class SpeechNormalizerTest {
+    @Test fun titlesAreWrittenOutSoTheModelDoesNotPauseAtTheFullStop() {
+        assertEquals("Mister Holmes and Missus Hudson thanked Doctor Watson.", SpeechNormalizer.normalize("Mr. Holmes and Mrs. Hudson thanked Dr. Watson."))
+        assertEquals("Professor Moriarty versus Captain Nemo.", SpeechNormalizer.normalize("Prof. Moriarty vs. Capt. Nemo."))
+    }
+
+    @Test fun ordinaryTextIsUntouched() {
+        assertEquals("He said hello. Then Dr left. It ended here.", SpeechNormalizer.normalize("He said hello. Then Dr left. It ended here."))
+        assertEquals("Mister", SpeechNormalizer.normalize("Mr. Mister").substringBefore(" "))
+        assertEquals("Mr.", SpeechNormalizer.normalize("Mr."), "a title with nothing after it stays")
+    }
+}

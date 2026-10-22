@@ -33,7 +33,8 @@ class PocketNarrator private constructor(
         /** The part of the recording (start, in seconds) and the pace (percent) last chosen for a saved voice, or null if never chosen. */
         fun choiceOrNull(library: VoiceLibrary, profileId: String): VoiceChoice? = runCatching {
             val f = String(library.engineData(profileId, PREFS, "1")!!).split(",").map { it.trim() }
-            VoiceChoice(f[0].toInt(), f[1].toInt().coerceIn(80, 100), f.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 2) ?: 1, f.getOrNull(3) == "1")
+            // Linking sentences was tried and skipped sentences, so it is always off whatever was saved; the code is kept for later.
+            VoiceChoice(f[0].toInt(), f[1].toInt().coerceIn(80, 100), f.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 2) ?: 1, false)
         }.getOrNull()
 
         fun choice(library: VoiceLibrary, profileId: String): VoiceChoice = choiceOrNull(library, profileId) ?: VoiceChoice(0, 100)

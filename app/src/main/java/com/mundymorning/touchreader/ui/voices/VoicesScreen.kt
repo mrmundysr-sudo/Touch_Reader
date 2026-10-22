@@ -285,17 +285,6 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) { RadioButton(labDelivery == d, null); Spacer(Modifier.width(12.dp)); Text(name) }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(labLink, role = Role.Switch) { labLink = !labLink },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Switch(labLink, null); Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text("Link sentences (experimental)")
-                            Text("Each part starts from where the one before it ended. The voice model was not built for this, so it may help the flow or may make things worse: compare.", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
                 }
             },
             confirmButton = { TextButton({ container.samplePlayer.stop(); container.voiceLab.make(v.id, v.name, com.mundymorning.touchreader.tts.VoiceChoice(labStart, labPace, labDelivery, labLink)); labPick = null }) { Text("Make sample") } },

@@ -74,7 +74,7 @@ class PocketTts private constructor(
                 if (dirty) { dirty = false; dropContinuation() }
                 val carry = link()
                 if (!carry) dropContinuation()
-                val result = generator(temperature(), lsdSteps).generateLinked(text, voice, if (carry) continuation else null, carry, isCancelled)
+                val result = generator(temperature(), lsdSteps).generateLinked(SpeechNormalizer.normalize(text), voice, if (carry) continuation else null, carry, isCancelled)
                     ?: return ShortArray(0)
                 if (carry) { dropContinuation(); continuation = result.state }
                 val raw = result.audio
