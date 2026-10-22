@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -138,13 +140,13 @@ fun LibraryScreen(container: AppContainer, onOpen: (id: Long, play: Boolean) -> 
 @Composable
 private fun EmptyState(hasDocs: Boolean) {
     Column(
-        Modifier.fillMaxSize().padding(32.dp),
-        verticalArrangement = Arrangement.Center,
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 32.dp, end = 32.dp, top = 16.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (hasDocs) Icon(Icons.Rounded.MenuBook, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
         else {
-            ArtImage("library_empty", "A golden retriever in glasses resting on a pile of books", Modifier.size(200.dp).clip(RoundedCornerShape(28.dp)), ContentScale.Crop, R.drawable.mascot)
+            ArtImage("library_empty", "A golden retriever in glasses resting on a pile of books", Modifier.size(150.dp).clip(RoundedCornerShape(24.dp)), ContentScale.Crop, R.drawable.mascot)
         }
         Spacer(Modifier.height(16.dp))
         Text(if (hasDocs) "No matches" else "Your library is empty", style = MaterialTheme.typography.titleLarge)
@@ -152,6 +154,7 @@ private fun EmptyState(hasDocs: Boolean) {
         Text(
             if (hasDocs) "Try a different search." else "Add a PDF, EPUB, Word, text, HTML or Markdown file and listen to it read aloud.",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
     }
 }
