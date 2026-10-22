@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -64,6 +65,7 @@ fun LibraryScreen(container: AppContainer, onOpen: (id: Long, play: Boolean) -> 
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
+                modifier = Modifier.offset(y = 28.dp),
                 onClick = { if (!importing) picker.launch(arrayOf("*/*")) },
                 icon = { ArtIcon("icon_add", Icons.Rounded.Add, null) },
                 text = { Text("Add document") },
@@ -79,6 +81,17 @@ fun LibraryScreen(container: AppContainer, onOpen: (id: Long, play: Boolean) -> 
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Rounded.Close, "Clear search") } },
                 shape = RoundedCornerShape(28.dp),
+                colors = run {
+                    // gold outline and text on the dark themes; the light theme keeps the standard look
+                    val gold = MaterialTheme.colorScheme.primary
+                    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = gold, unfocusedBorderColor = gold.copy(alpha = 0.8f),
+                        focusedTextColor = gold, unfocusedTextColor = gold,
+                        focusedPlaceholderColor = gold.copy(alpha = 0.7f), unfocusedPlaceholderColor = gold.copy(alpha = 0.7f),
+                        focusedLeadingIconColor = gold, unfocusedLeadingIconColor = gold,
+                        focusedTrailingIconColor = gold, unfocusedTrailingIconColor = gold, cursorColor = gold,
+                    ) else OutlinedTextFieldDefaults.colors()
+                },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             )
             if (shown.isEmpty()) {
