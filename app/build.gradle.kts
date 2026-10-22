@@ -70,3 +70,19 @@ dependencies {
 
     testImplementation(kotlin("test"))
 }
+
+// Artwork: copies the pictures in art/<page>/<slot>.png|webp into the app as art_<slot> (see docs/ASSETS.md). Only files named after a
+// slot in art/slots.json are copied, so a stray or misnamed file can never break the build; slots without a picture use the built-in look.
+val syncArt = tasks.register<Copy>("syncArt") {
+    val known = Regex("\"id\"\\s*:\\s*\"([a-z][a-z0-9_]*)\"").findAll(rootProject.file("art/slots.json").readText()).map { it.groupValues[1] }.toSet()
+    from(rootProject.file("art")) {
+        include("**/*.png", "**/*.webp")
+        eachFile {
+            val stem = name.substringBeforeLast('.')
+            if (stem in known && name == name.lowercase()) path = "art_$name" else exclude()
+        }
+    }
+    includeEmptyDirs = false
+    into(layout.projectDirectory.dir("src/main/res/drawable-nodpi"))
+}
+tasks.named("preBuild") { dependsOn(syncArt) }

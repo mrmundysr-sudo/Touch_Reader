@@ -29,6 +29,10 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      - name: Check the artwork folder (art/)
+        run: |
+          pip install -q pillow
+          python3 scripts/art_tool.py check
       - name: Unit tests (core modules)
         run: ./gradlew -PjvmOnly=true test --stacktrace
       - name: Build debug APK

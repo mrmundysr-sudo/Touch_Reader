@@ -7,3 +7,6 @@ captures/
 *.apk
 *.aab
 *.keystore
+
+# artwork copied into the app by the syncArt task (the originals live in art/)
+app/src/main/res/drawable-nodpi/art_*

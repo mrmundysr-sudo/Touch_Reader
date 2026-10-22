@@ -1,5 +1,9 @@
 package com.mundymorning.touchreader.ui.reader
 
+import com.mundymorning.touchreader.ui.theme.OnLeather
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.luminance
+import com.mundymorning.touchreader.ui.art.*
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -100,9 +104,9 @@ fun ReaderScreen(container: AppContainer, docId: Long, autoPlay: Boolean, onBack
                 title = { Text(ui.title.ifEmpty { "Reading" }, maxLines = 1) },
                 navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to library") } },
                 actions = {
-                    IconButton({ onExport(docId) }) { Icon(Icons.Rounded.Headphones, "Audiobook") }
+                    IconButton({ onExport(docId) }) { ArtIcon("icon_headphones", Icons.Rounded.Headphones, "Audiobook") }
                     IconButton({ sheet = Sheet.TEXT }) { Icon(Icons.Rounded.TextFields, "Text size") }
-                    IconButton({ sheet = Sheet.BOOKMARKS }) { Icon(Icons.Rounded.Bookmarks, "Bookmarks") }
+                    IconButton({ sheet = Sheet.BOOKMARKS }) { ArtIcon("icon_bookmarks", Icons.Rounded.Bookmarks, "Bookmarks") }
                     IconButton({ sheet = Sheet.CHAPTERS }) { Icon(Icons.AutoMirrored.Rounded.List, "Chapters") }
                 },
             )
@@ -209,7 +213,7 @@ private fun ChapterText(
         state = listState,
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().artTexture(if (MaterialTheme.colorScheme.onBackground.luminance() > 0.5f) "reader_bg_dark" else "reader_bg_light"),
     ) {
         itemsIndexed(chapter.blocks) { bi, block ->
             val range = if (current != null && current.block == bi) current.start until current.end else null
@@ -254,7 +258,8 @@ private fun BlockText(block: Block, highlight: IntRange?, hl: androidx.compose.u
 
 @Composable
 private fun PlayerPanel(ui: com.mundymorning.touchreader.playback.PlayerUi, book: ReaderBook, onSheet: (Sheet) -> Unit, onToggle: () -> Unit, controller: com.mundymorning.touchreader.playback.PlaybackController) {
-    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+    val framed = hasArt("player_bar")
+    val body: @Composable () -> Unit = {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
             Text(ui.chapterTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.padding(horizontal = 4.dp))
             val activity by controller.engineActivity.collectAsState(initial = "")
@@ -268,32 +273,43 @@ private fun PlayerPanel(ui: com.mundymorning.touchreader.playback.PlayerUi, book
                 )
             }
             var drag by remember { mutableStateOf<Float?>(null) }
-            Slider(
+            if (hasArt("global_ribbon")) {
+                // the bookmark ribbon is the handle of the reading-position slider
+                Slider(
+                    value = drag ?: book.progress(ui.position),
+                    onValueChange = { drag = it },
+                    onValueChangeFinished = { drag?.let { controller.seekToFraction(it) }; drag = null },
+                    modifier = Modifier.fillMaxWidth().height(40.dp).semantics { contentDescription = "Reading position" },
+                    thumb = { ArtImage("global_ribbon", null, Modifier.size(width = 22.dp, height = 44.dp), ContentScale.Fit) },
+                )
+            } else Slider(
                 value = drag ?: book.progress(ui.position),
                 onValueChange = { drag = it },
                 onValueChangeFinished = { drag?.let { controller.seekToFraction(it) }; drag = null },
                 modifier = Modifier.fillMaxWidth().height(28.dp).semantics { contentDescription = "Reading position" },
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(controller::previousChapter, Modifier.size(48.dp)) { Icon(Icons.Rounded.SkipPrevious, "Previous chapter") }
-                IconButton(controller::previousSentence, Modifier.size(48.dp)) { Icon(Icons.Rounded.NavigateBefore, "Previous sentence") }
+                IconButton(controller::previousChapter, Modifier.size(48.dp)) { ArtIcon("icon_previous", Icons.Rounded.SkipPrevious, "Previous chapter") }
+                IconButton(controller::previousSentence, Modifier.size(48.dp)) { ArtIcon("icon_sentence_back", Icons.Rounded.NavigateBefore, "Previous sentence") }
                 FilledIconButton(onToggle, Modifier.size(64.dp), shape = CircleShape) {
-                    Icon(if (ui.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (ui.playing) "Pause" else "Play", Modifier.size(34.dp))
+                    ArtIcon(if (ui.playing) "icon_pause" else "icon_play", if (ui.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (ui.playing) "Pause" else "Play", size = 34.dp)
                 }
-                IconButton(controller::nextSentence, Modifier.size(48.dp)) { Icon(Icons.Rounded.NavigateNext, "Next sentence") }
-                IconButton(controller::nextChapter, Modifier.size(48.dp)) { Icon(Icons.Rounded.SkipNext, "Next chapter") }
+                IconButton(controller::nextSentence, Modifier.size(48.dp)) { ArtIcon("icon_sentence_forward", Icons.Rounded.NavigateNext, "Next sentence") }
+                IconButton(controller::nextChapter, Modifier.size(48.dp)) { ArtIcon("icon_next", Icons.Rounded.SkipNext, "Next chapter") }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                AssistChip({ onSheet(Sheet.SPEED) }, { Text("${ui.speed}×") }, leadingIcon = { Icon(Icons.Rounded.Speed, null, Modifier.size(18.dp)) })
-                AssistChip({ onSheet(Sheet.VOICE) }, { Text("Voice") }, leadingIcon = { Icon(Icons.Rounded.RecordVoiceOver, null, Modifier.size(18.dp)) })
+                AssistChip({ onSheet(Sheet.SPEED) }, { Text("${ui.speed}×") }, leadingIcon = { ArtIcon("icon_speed", Icons.Rounded.Speed, null, size = 18.dp) })
+                AssistChip({ onSheet(Sheet.VOICE) }, { Text("Voice") }, leadingIcon = { ArtIcon("icon_voice", Icons.Rounded.RecordVoiceOver, null, size = 18.dp) })
                 AssistChip(
                     { onSheet(Sheet.SLEEP) },
                     { Text(if (ui.sleepActive) "On" else "Sleep") },
-                    leadingIcon = { Icon(Icons.Rounded.Timer, null, Modifier.size(18.dp)) },
+                    leadingIcon = { ArtIcon("icon_sleep", Icons.Rounded.Timer, null, size = 18.dp) },
                 )
             }
         }
     }
+    if (framed) Box(Modifier.fillMaxWidth().artFrame("player_bar")) { OnLeather { body() } }
+    else Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) { body() }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)

@@ -1,5 +1,7 @@
 package com.mundymorning.touchreader.ui.library
 
+import com.mundymorning.touchreader.ui.theme.OnLeather
+import com.mundymorning.touchreader.ui.art.*
 import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -61,12 +63,13 @@ fun LibraryScreen(container: AppContainer, onOpen: (id: Long, play: Boolean) -> 
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { if (!importing) picker.launch(arrayOf("*/*")) },
-                icon = { Icon(Icons.Rounded.Add, null) },
+                icon = { ArtIcon("icon_add", Icons.Rounded.Add, null) },
                 text = { Text("Add document") },
             )
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
+            ArtBanner("library_header", 100.dp)
             if (importing) LinearProgressIndicator(Modifier.fillMaxWidth())
             OutlinedTextField(
                 value = query, onValueChange = { query = it }, singleLine = true,
@@ -141,8 +144,7 @@ private fun EmptyState(hasDocs: Boolean) {
     ) {
         if (hasDocs) Icon(Icons.Rounded.MenuBook, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
         else {
-            Image(painterResource(R.drawable.mascot), contentDescription = "A golden retriever in glasses resting on a pile of books", contentScale = ContentScale.Crop,
-                modifier = Modifier.size(200.dp).clip(RoundedCornerShape(28.dp)))
+            ArtImage("library_empty", "A golden retriever in glasses resting on a pile of books", Modifier.size(200.dp).clip(RoundedCornerShape(28.dp)), ContentScale.Crop, R.drawable.mascot)
         }
         Spacer(Modifier.height(16.dp))
         Text(if (hasDocs) "No matches" else "Your library is empty", style = MaterialTheme.typography.titleLarge)
@@ -164,7 +166,8 @@ private fun DocumentCard(
     onRemove: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
-    ElevatedCard(Modifier.fillMaxWidth().clickable(onClick = onOpen), shape = RoundedCornerShape(20.dp)) {
+    val framed = hasArt("global_card_frame")
+    val body: @Composable () -> Unit = {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
@@ -172,11 +175,11 @@ private fun DocumentCard(
                     d.author?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
                 }
                 Box {
-                    IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, "More options for ${d.title}") }
+                    IconButton({ menu = true }) { ArtIcon("icon_more", Icons.Rounded.MoreVert, "More options for ${d.title}") }
                     DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem(text = { Text("Audiobook…") }, leadingIcon = { Icon(Icons.Rounded.Headphones, null) }, onClick = { menu = false; onAudiobook() })
-                        DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { menu = false; onRename() })
-                        DropdownMenuItem(text = { Text("Remove from library") }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }, onClick = { menu = false; onRemove() })
+                        DropdownMenuItem(text = { Text("Audiobook…") }, leadingIcon = { ArtIcon("icon_headphones", Icons.Rounded.Headphones, null) }, onClick = { menu = false; onAudiobook() })
+                        DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { ArtIcon("icon_edit", Icons.Rounded.Edit, null) }, onClick = { menu = false; onRename() })
+                        DropdownMenuItem(text = { Text("Remove from library") }, leadingIcon = { ArtIcon("icon_delete", Icons.Rounded.Delete, null) }, onClick = { menu = false; onRemove() })
                     }
                 }
             }
@@ -197,17 +200,19 @@ private fun DocumentCard(
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = onAudiobook, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Icon(Icons.Rounded.Headphones, null)
+                ArtButton(onClick = onAudiobook, outlined = true) {
+                    ArtIcon("icon_headphones", Icons.Rounded.Headphones, null)
                     Spacer(Modifier.width(4.dp))
                     Text("Audiobook")
                 }
-                FilledTonalButton(onClick = onResume, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Icon(Icons.Rounded.PlayArrow, null)
+                ArtButton(onClick = onResume, selected = true) {
+                    ArtIcon("icon_play", Icons.Rounded.PlayArrow, null)
                     Spacer(Modifier.width(4.dp))
                     Text("Resume")
                 }
             }
         }
     }
+    if (framed) Box(Modifier.fillMaxWidth().artFrame("global_card_frame").clickable(onClick = onOpen)) { OnLeather { body() } }
+    else ElevatedCard(Modifier.fillMaxWidth().clickable(onClick = onOpen), shape = RoundedCornerShape(20.dp)) { body() }
 }

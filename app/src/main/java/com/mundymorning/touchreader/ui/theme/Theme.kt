@@ -1,8 +1,10 @@
 package com.mundymorning.touchreader.ui.theme
 
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
@@ -105,13 +107,30 @@ private val StudyShapes = Shapes(
 /** [dark] picks Study over Parchment; [contrast] overrides both with the black and white scheme. */
 @Composable
 fun TouchReaderTheme(dark: Boolean, contrast: Boolean = false, content: @Composable () -> Unit) {
+    // With a background picture the screens must not paint over it: the real colour and the picture are drawn once, behind everything.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val textured = androidx.compose.runtime.remember(dark, contrast) {
+        !contrast && com.mundymorning.touchreader.ui.art.Art.resId(context, if (dark) "global_bg_dark" else "global_bg_light") != 0
+    }
+    val scheme = when { contrast -> HighContrast; dark -> Study; else -> Parchment }
     MaterialTheme(
-        colorScheme = when { contrast -> HighContrast; dark -> Study; else -> Parchment },
+        colorScheme = if (textured) scheme.copy(background = Color.Transparent) else scheme,
         typography = StudyTypography, shapes = StudyShapes, content = content,
     )
+}
+
+/**
+ * For text and icons that sit on the artwork's dark leather panels: always the Study colours (cream and brass), whichever theme is on,
+ * so they stay readable on the leather.
+ */
+@Composable
+fun OnLeather(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = Study, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
+        CompositionLocalProvider(LocalContentColor provides Study.onSurface) { content() }
+    }
 }
 
 /** The sentence being read: warm gold on parchment, deep gold on the dark themes. */
 @Composable
 fun highlightColor(): Color =
-    if (MaterialTheme.colorScheme.background.red < 0.5f) Color(0xFF5A4520) else Color(0xFFF2D27A)
+    if (MaterialTheme.colorScheme.onBackground.luminance() > 0.5f) Color(0xFF5A4520) else Color(0xFFF2D27A)

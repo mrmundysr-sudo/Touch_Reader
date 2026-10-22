@@ -1,5 +1,6 @@
 package com.mundymorning.touchreader.ui.export
 
+import com.mundymorning.touchreader.ui.art.*
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -168,6 +169,7 @@ fun ExportScreen(container: AppContainer, docId: Long, onBack: () -> Unit, onOpe
     ) { pad ->
         if (b == null) { Box(Modifier.padding(pad).fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }; return@Scaffold }
         LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { ArtBanner("audiobook_header", 100.dp) }
             item { Text(title, style = MaterialTheme.typography.titleLarge) }
 
             if (!voiceReady) item {

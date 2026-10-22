@@ -1,5 +1,6 @@
 package com.mundymorning.touchreader
 
+import com.mundymorning.touchreader.ui.art.*
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -70,7 +71,9 @@ class MainActivity : ComponentActivity() {
             }
             var splash by rememberSaveable { mutableStateOf(true) }
             TouchReaderTheme(dark, contrast = mode == ThemeMode.CONTRAST) {
-                Box {
+                val rootColor = when { mode == ThemeMode.CONTRAST -> Color.Black; dark -> Color(0xFF1C120B); else -> Color(0xFFF6ECD8) }
+                val rootBase = Modifier.fillMaxSize().background(rootColor)
+                Box(if (mode == ThemeMode.CONTRAST) rootBase else rootBase.artTexture(if (dark) "global_bg_dark" else "global_bg_light")) {
                     AppRoot(container, pendingDoc, pendingExport) { pendingDoc = -1L; pendingExport = -1L }
                     AnimatedVisibility(splash, exit = fadeOut(tween(450))) { SplashScreen { splash = false } }
                 }
@@ -90,15 +93,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private data class Tab(val route: String, val label: String, val icon: ImageVector)
+private data class Tab(val route: String, val label: String, val icon: ImageVector, val artSlot: String)
 
 @Composable
 private fun AppRoot(container: AppContainer, pendingDoc: Long, pendingExport: Long, consumed: () -> Unit) {
     val nav = rememberNavController()
     val tabs = listOf(
-        Tab("library", "Library", Icons.AutoMirrored.Rounded.LibraryBooks),
-        Tab("voices", "Voices", Icons.Rounded.RecordVoiceOver),
-        Tab("settings", "Settings", Icons.Rounded.Settings),
+        Tab("library", "Library", Icons.AutoMirrored.Rounded.LibraryBooks, "icon_library"),
+        Tab("voices", "Voices", Icons.Rounded.RecordVoiceOver, "icon_voice"),
+        Tab("settings", "Settings", Icons.Rounded.Settings, "icon_settings"),
     )
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
@@ -123,7 +126,7 @@ private fun AppRoot(container: AppContainer, pendingDoc: Long, pendingExport: Lo
                                     launchSingleTop = true; restoreState = true
                                 }
                             },
-                            icon = { Icon(t.icon, contentDescription = null) },
+                            icon = { ArtIcon(t.artSlot, t.icon, null) },
                             label = { Text(t.label) },
                         )
                     }
@@ -167,7 +170,7 @@ private fun AppRoot(container: AppContainer, pendingDoc: Long, pendingExport: Lo
 private fun SplashScreen(onDone: () -> Unit) {
     LaunchedEffect(Unit) { delay(1600); onDone() }
     Box(Modifier.fillMaxSize().background(Color(0xFF1C120B)).clickable(onClickLabel = "Skip") { onDone() }) {
-        Image(painterResource(R.drawable.splash_art), contentDescription = "Touch Reader", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        ArtImage("splash_art", "Touch Reader", Modifier.fillMaxSize(), ContentScale.Crop, R.drawable.splash_art)
         Text(
             "Mundy Morning Studios\nAlways Professional. Always Free.",
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 20.dp),

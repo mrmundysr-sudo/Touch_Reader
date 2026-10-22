@@ -1,5 +1,6 @@
 package com.mundymorning.touchreader.ui.voices
 
+import com.mundymorning.touchreader.ui.art.*
 import android.app.ActivityManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -72,6 +73,7 @@ fun VoicesScreen(container: AppContainer, onCreateVoice: () -> Unit) {
 
     Scaffold(topBar = { TopAppBar(title = { Text("Voices") }) }) { pad ->
         LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+            item { ArtBanner("voices_header", 100.dp) }
             item { SectionHeader("Android system voices", "Provided by the speech engine installed on this phone. Voices marked offline work without internet.") }
             item {
                 ListItem(

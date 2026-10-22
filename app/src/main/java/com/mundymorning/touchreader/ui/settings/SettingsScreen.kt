@@ -1,5 +1,6 @@
 package com.mundymorning.touchreader.ui.settings
 
+import com.mundymorning.touchreader.ui.art.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +30,7 @@ fun SettingsScreen(container: AppContainer) {
 
     Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { pad ->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+            ArtBanner("settings_header", 100.dp)
             Header("Appearance")
             Column(Modifier.selectableGroup()) {
                 listOf(ThemeMode.SYSTEM to "Follow system (Parchment by day, Study at night)", ThemeMode.LIGHT to "Parchment (light)", ThemeMode.DARK to "Study (dark walnut)", ThemeMode.CONTRAST to "High contrast").forEach { (m, label) ->
@@ -81,8 +83,12 @@ fun SettingsScreen(container: AppContainer) {
     }
 }
 
-@Composable private fun Header(t: String) =
-    Text(t, Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+@Composable private fun Header(t: String) {
+    Column {
+        ArtBanner("global_divider", 16.dp, Modifier.padding(top = 12.dp))
+        Text(t, Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    }
+}
 
 @Composable private fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) =
     ListItem(headlineContent = { Text(label) }, trailingContent = { Switch(value, onChange) }, modifier = Modifier.heightIn(min = 56.dp))
